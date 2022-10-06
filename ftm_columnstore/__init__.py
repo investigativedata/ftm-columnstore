@@ -1,6 +1,6 @@
 import logging
 
-from .dataset import get_dataset  # noqa
+from .dataset import Dataset, get_dataset  # noqa
 from .driver import get_driver  # noqa
 
 # don't show clickhouse numpy warnings:
