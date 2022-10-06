@@ -10,7 +10,7 @@ test:
 build:
 	python setup.py sdist bdist_wheel
 
-prerelease: test readme
+prerelease: test
 	bump2version patch
 
 release: clean build
@@ -26,10 +26,6 @@ clean:
 	find . -name '*.pyo' -exec rm -f {} +
 	find . -name '*~' -exec rm -f {} +
 	find . -name '__pycache__' -exec rm -fr {} +
-
-readme:
-	pandoc README.md -o README.rst
-
 
 clickhouse:  # for testing purposes
 	docker run -p 8123:8123 -p 9000:9000 --ulimit nofile=262144:262144 clickhouse/clickhouse-server
