@@ -4,7 +4,7 @@ from typing import Any, Iterable, Iterator, Optional
 import pandas as pd
 from clickhouse_driver import Client, errors
 
-from . import enums, settings
+from . import settings
 
 from .util import to_numeric
 
@@ -107,10 +107,10 @@ class ClickhouseDriver:
             `id`                      FixedString(40) NOT NULL,
             `dataset`                 String NOT NULL,
             `entity_id`               String NOT NULL,
-            `schema`                  {schema} NOT NULL,
+            `schema`                  LowCardinality(String) NOT NULL,
             `origin`                  String NOT NULL,
-            `prop`                    {prop} NOT NULL,
-            `prop_type`               {prop_type} NOT NULL,
+            `prop`                    LowCardinality(String) NOT NULL,
+            `prop_type`               LowCardinality(String) NOT NULL,
             `value`                   String NOT NULL,
             `value_num`               Float NULL,
             `last_seen`               DateTime NOT NULL
@@ -124,8 +124,8 @@ class ClickhouseDriver:
             `id`                      FixedString(40) NOT NULL,
             `dataset`                 String NOT NULL,
             `entity_id`               String NOT NULL,
-            `schema`                  {schema} NOT NULL,
-            `prop`                    {prop} NOT NULL,
+            `schema`                  LowCardinality(String) NOT NULL,
+            `prop`                    LowCardinality(String) NOT NULL,
             `fingerprint`             String NOT NULL,
             `fingerprint_id`          FixedString(40) NOT NULL,
             INDEX fp_ix (fingerprint) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
@@ -134,29 +134,16 @@ class ClickhouseDriver:
         ORDER BY ({order_by})
         """
 
-        def get_enum(values: Iterable[str]) -> str:
-            values = ", ".join(f"'{v}'" for v in sorted(values))
-            return f"Enum({values})"
-
         # implicit enum types
-        schema = get_enum(enums.SCHEMATA)
-        prop = get_enum(enums.PROPERTIES)
-        prop_fpx = get_enum(enums.PROPERTIES_FPX)
-        prop_type = get_enum(enums.PROPERTY_TYPES)
         primary_key = ", ".join(UNIQUE[:4])
         order_by = ", ".join(UNIQUE)
         create_table = CREATE_TABLE.format(
             table=self.table,
-            schema=schema,
-            prop=prop,
-            prop_type=prop_type,
             primary_key=primary_key,
             order_by=order_by,
         )
         create_table_fpx = CREATE_TABLE_FPX.format(
             table=self.table_fpx,
-            schema=schema,
-            prop=prop_fpx,
             primary_key="fingerprint_id,schema,dataset",
             order_by="fingerprint_id,schema,dataset",
         )
