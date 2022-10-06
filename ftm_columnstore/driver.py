@@ -6,6 +6,8 @@ from clickhouse_driver import Client, errors
 
 from . import enums, settings
 
+from .util import to_numeric
+
 
 def table_exists(e: Exception, table: str) -> bool:
     return f"Table default.{table} already exists" in str(e)
@@ -58,6 +60,8 @@ class ClickhouseDriver:
     def insert(self, df: pd.DataFrame, table: Optional[str] = None) -> int:
         # https://clickhouse-driver.readthedocs.io/en/latest/features.html#numpy-pandas-support
         table = table or self.table
+        if "value_num" in df:
+            df["value_num"] = df["value_num"].map(to_numeric)
         df = df.applymap(lambda x: None if x == "" or pd.isna(x) else x)
         with self.get_connection() as conn:
             res = conn.insert_dataframe("INSERT INTO %s VALUES" % table, df)
@@ -108,7 +112,7 @@ class ClickhouseDriver:
             `prop`                    {prop} NOT NULL,
             `prop_type`               {prop_type} NOT NULL,
             `value`                   String NOT NULL,
-            `value_num`               Decimal128(10) NULL,
+            `value_num`               Float NULL,
             `last_seen`               DateTime NOT NULL
         ) ENGINE = ReplacingMergeTree(last_seen)
         PRIMARY KEY ({primary_key})

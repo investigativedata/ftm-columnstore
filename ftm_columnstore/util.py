@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any, Optional, Union
 
 import pandas as pd
@@ -43,3 +44,21 @@ def handle_error(
     if dataset is not None:
         msg = f"[{dataset}] "
     logger.error(msg + f"{e.__class__.__name__}: `{e}`")
+
+
+NUMERIC_US = re.compile(r"^-?\d+(?:,\d{3})*(?:\.\d+)?$")
+NUMERIC_DE = re.compile(r"^-?\d+(?:\.\d{3})*(?:,\d+)?$")
+
+
+def to_numeric(value: str):
+    value = str(value).strip()
+    try:
+        value = float(value)
+        if int(value) == value:
+            return int(value)
+        return value
+    except ValueError:
+        if re.match(NUMERIC_US, value):
+            return to_numeric(value.replace(",", ""))
+        if re.match(NUMERIC_DE, value):
+            return to_numeric(value.replace(".", "").replace(",", "."))

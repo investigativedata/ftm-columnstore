@@ -110,15 +110,17 @@ class Dataset:
         return self.drop()
 
     def put(self, entity, origin: Optional[str] = None):
-        bulk = self.bulk()
-        bulk.put(entity, origin=origin or self.origin)
+        bulk = self.bulk(origin=origin or self.origin)
+        bulk.put(entity)
         return bulk.flush()
 
-    def bulk(self, with_fingerprints: Optional[bool] = False) -> "BulkWriter":
+    def bulk(
+        self, origin: Optional[str] = None, with_fingerprints: Optional[bool] = False
+    ) -> "BulkWriter":
         return BulkWriter(
             self,
             with_fingerprints=with_fingerprints,
-            origin=self.origin,
+            origin=origin or self.origin,
             ignore_errors=self.ignore_errors,
         )
 

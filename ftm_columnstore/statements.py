@@ -77,15 +77,19 @@ def statements_from_entity(entity: dict, dataset: str) -> Iterator[Statement]:
             yield stmt
 
 
+def _should_fingerprint(entity):
+    if entity.id is None or entity.schema is None:
+        return False
+    if entity.schema.is_a("Mention"):
+        return True
+    return entity.schema.is_a("Thing")
+
+
 def fingerprints_from_entity(
     entity: dict, dataset: str
 ) -> Iterator[FingerprintStatement]:
     entity = model.get_proxy(entity)
-    if (
-        entity.id is None
-        or entity.schema is None
-        or not (entity.schema.is_a("Thing") or entity.schema.is_a("Mention"))
-    ):
+    if not _should_fingerprint(entity):
         return []
     entity_id = entity.id.rsplit(".", 1)[0]
     for prop, value in entity.itervalues():
