@@ -6,7 +6,7 @@ with open("README.md") as f:
 
 setup(
     name="ftm-columnstore",
-    version="0.0.1",
+    version="0.0.2",
     description="Column store implementation for ftm data based on clickhouse",
     long_description=long_description,
     long_description_content_type="text/markdown",
