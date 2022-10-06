@@ -123,3 +123,60 @@ entities = [e for e in q]
 # querying for properties:
 q = EntityQuery().where(schema="Payment", amount__gte=1000)
 ```
+
+
+## benchmarks
+
+[OpenSanctions](https://opensanctions.org) dataset
+
+**tl;dr** For a small dataset, the original `followthemoney-store`
+implementation is faster, as the columnstore implementation has the statements
+overhead. Benefits come from the explicit querying features.
+
+```bash
+curl -s https://data.opensanctions.org/datasets/latest/all/entities.ftm.json\?`date '+%s'` > opensanctions.ftm.ijson
+```
+
+All tests run on the same Dell XPS Laptop, 16 GB, 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz
+
+### write
+
+`ftm-columnstore`: 99s
+
+```bash
+date +"%H:%M:%S" ; ftm cstore write -d opensanctions -i opensanctions.ftm.ijson ; date +"%H:%M:%S"
+15:44:51
+ftm_columnstore.dataset [INFO] [opensanctions] Write: 100000 entities with 532100 statements.
+# ...
+ftm_columnstore.dataset [INFO] [opensanctions] Write: 536131 entities with 5565069 statements.
+15:46:10
+```
+
+`followthemoney-store` (postgres): 50s
+
+```bash
+date +"%H:%M:%S" ; ftm store write -d opensanctions -i opensanctions.ftm.ijson ; date +"%H:%M:%S"
+15:46:55
+ftmstore [INFO] Write [opensanctions]: 10000 entities
+# ...
+ftmstore [INFO] Write [opensanctions]: 530000 entities
+15:47:45
+```
+
+### iterate
+
+`followthemoney-store` (postgres): 46s
+
+```bash
+date +"%H:%M:%S" ; ftm store iterate -d opensanctions > /dev/null ; date +"%H:%M:%S"
+15:48:34
+15:49:20
+```
+
+`ftm-columnstore`: 87s
+
+```bash
+date +"%H:%M:%S" ; ftm cstore iterate -d opensanctions > /dev/null ; date +"%H:%M:%S"
+15:49:27
+15:50:54
+```
