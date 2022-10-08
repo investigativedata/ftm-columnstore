@@ -135,8 +135,8 @@ class ClickhouseDriver:
         ORDER BY ({order_by})
         """
 
-        primary_key = "dataset,schema,canonical_id,entity_id,origin,prop,value"
-        order_by = primary_key
+        primary_key = "dataset,schema,canonical_id"
+        order_by = "dataset,schema,canonical_id,entity_id,origin,prop,value"
         create_table = CREATE_TABLE.format(
             table=self.table,
             primary_key=primary_key,
