@@ -245,25 +245,30 @@ class QueryTestCase(ClickhouseTestCase):
         q = EntityQuery()
         self.assertEqual(
             str(q),
-            "SELECT dataset, entity_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, entity_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE entity_id IN (SELECT DISTINCT entity_id FROM ftm_columnstore_test) GROUP BY dataset, entity_id, prop, schema) GROUP BY dataset, entity_id, schema ORDER BY dataset, entity_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test) GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
         )
 
         # all filters etc. will be applied to the innerst query
+        q = EntityQuery().where(canonical_id=1)
+        self.assertEqual(
+            str(q),
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE canonical_id = '1') GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
+        )
         q = EntityQuery().where(entity_id=1)
         self.assertEqual(
             str(q),
-            "SELECT dataset, entity_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, entity_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE entity_id IN (SELECT DISTINCT entity_id FROM ftm_columnstore_test WHERE entity_id = '1') GROUP BY dataset, entity_id, prop, schema) GROUP BY dataset, entity_id, schema ORDER BY dataset, entity_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE entity_id = '1') GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
         )
 
         q = EntityQuery()[:100]
         self.assertEqual(
             str(q),
-            "SELECT dataset, entity_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, entity_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE entity_id IN (SELECT DISTINCT entity_id FROM ftm_columnstore_test LIMIT 0, 100) GROUP BY dataset, entity_id, prop, schema) GROUP BY dataset, entity_id, schema ORDER BY dataset, entity_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test LIMIT 0, 100) GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
         )
 
         # make sure dataset is passed along
         q = EntityQuery().where(dataset="luanda_leaks")
         self.assertEqual(
             str(q),
-            "SELECT dataset, entity_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, entity_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE dataset = 'luanda_leaks' AND entity_id IN (SELECT DISTINCT entity_id FROM ftm_columnstore_test WHERE dataset = 'luanda_leaks') GROUP BY dataset, entity_id, prop, schema) GROUP BY dataset, entity_id, schema ORDER BY dataset, entity_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE dataset = 'luanda_leaks') AND dataset = 'luanda_leaks' GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
         )

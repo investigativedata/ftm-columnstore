@@ -86,12 +86,13 @@ class Dataset:
         self.origin = origin
         self.driver = driver or get_driver()
         self.ignore_errors = ignore_errors
-        self.query = EntityQuery(driver=driver).where(dataset=name, origin=origin)
+        self.Q = Query(driver=driver).where(dataset=name, origin=origin)
+        self.EQ = EntityQuery(driver=driver).where(dataset=name, origin=origin)
 
     def drop(self):
         log.info("Dropping ftm-store: %s" % self.name)
-        where = self.query.where_part
-        stmt = f"ALTER TABLE {self.driver.table} DELETE {where}"
+        where = self.Q.where_part
+        stmt = f"DELETE FROM {self.driver.table} {where}"
         try:
             return self.driver.execute(stmt)
         except Exception as e:
@@ -102,10 +103,25 @@ class Dataset:
                 dataset=self.name,
             )
 
-    def delete(self, entity_id: Optional[str] = None, origin: Optional[str] = None):
-        if entity_id or origin:
-            where = Query(driver=self.driver).where(entity_id=entity_id, origin=origin)
-            stmt = f"ALTER TABLE {self.driver.table} DELETE {where}"
+    def delete(
+        self,
+        canonical_id: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        origin: Optional[str] = None,
+    ):
+        q = self.Q
+        filtered = False
+        if canonical_id is not None:
+            filtered = True
+            q = q.where(canonical_id=canonical_id)
+        if entity_id is not None:
+            filtered = True
+            q = q.where(entity_id=entity_id)
+        if origin is not None:
+            filtered = True
+            q = q.where(origin=origin)
+        if filtered:
+            stmt = f"DELETE FROM {self.driver.table} {q.where_part}"
             return self.driver.execute(stmt)
         return self.drop()
 
@@ -125,31 +141,40 @@ class Dataset:
         )
 
     def iterate(
-        self, entity_id: Optional[str] = None, chunksize: Optional[int] = 1000
+        self,
+        canonical_id: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        origin: Optional[str] = None,
+        chunksize: Optional[int] = 1000,
     ) -> Iterator[E]:
-        q = self.query
+        q = self.EQ
+        if canonical_id is not None:
+            q = q.where(canonical_id=canonical_id)
         if entity_id is not None:
             q = q.where(entity_id=entity_id)
+        if origin is not None:
+            q = q.where(origin=origin)
         return q.iterate(chunksize=chunksize)
 
     def statements(self, origin: Optional[str] = None) -> Iterator[tuple]:
-        q = (
-            Query(driver=self.driver)
-            .select("DISTINCT ON (id) *")
-            .where(dataset=self.name, origin=self.origin)
-        )
+        origin = origin or self.origin
+        q = self.Q.select("DISTINCT ON (id) *").where(dataset=self.name, origin=origin)
         return q.iterate()
 
-    def get(self, entity_id: str):
-        for entity in self.iterate(entity_id=entity_id):
-            return entity
+    def get(self, id_: str, canonical: Optional[bool] = True) -> E:
+        if canonical:
+            for entity in self.iterate(canonical_id=id_):
+                return entity
+        else:
+            for entity in self.iterate(entity_id=id_):
+                return entity
 
     def expand(self, entity: E, levels: Optional[int] = 1) -> Iterator[E]:
         """
         find connected entities in both directions
         """
 
-        def _expand(entity: E, levels: int):
+        def _expand(entity: E, levels: int) -> Iterator[E]:
             # outgoing
             yield from self.resolve(entity, levels)
             # incoming
@@ -173,7 +198,7 @@ class Dataset:
         resolve entity prop values to actual entites
         """
 
-        def _resolve(entity: E, levels: int):
+        def _resolve(entity: E, levels: int) -> Iterator[E]:
             for prop, value in entity.itervalues():
                 if prop.type.name == "entity":
                     expanded_entity = self.get(value)
@@ -191,7 +216,7 @@ class Dataset:
         return self.iterate()
 
     def __len__(self):
-        return len(self.query)
+        return len(self.EQ)
 
     def __str__(self):
         return self.name

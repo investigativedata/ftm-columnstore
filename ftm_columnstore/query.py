@@ -157,6 +157,7 @@ class Query:
             "dataset",
             "schema",
             "origin",
+            "canonical_id",
             "entity_id",
             "prop",
             "prop_type",
@@ -272,11 +273,13 @@ class Query:
         """pivot via pandas to have columns per prop"""
         df = self.driver.query_dataframe(str(self))
         df = (
-            df.groupby(["dataset", "schema", "entity_id", "prop"])
+            df.groupby(["dataset", "schema", "canonical_id", "prop"])
             .agg({"value": lambda s: s.unique()})
             .reset_index()
         )
-        df = df.pivot(["dataset", "entity_id", "schema"], "prop", "value").reset_index()
+        df = df.pivot(
+            ["dataset", "canonical_id", "schema"], "prop", "value"
+        ).reset_index()
         return df
 
     @classmethod
@@ -298,7 +301,7 @@ class EntityQuery(Query):
     """aggregate rows to entity instances and use where/having/order_by on
     actual properties"""
 
-    fields = ("DISTINCT entity_id",)
+    fields = ("DISTINCT canonical_id",)
 
     @property
     def dataset(self):
@@ -308,12 +311,12 @@ class EntityQuery(Query):
     def __iter__(self) -> Iterator[E]:
         res = self.execute()
         entity = None
-        for dataset, entity_id, schema, props, values in res:
+        for dataset, canonical_id, schema, props, values in res:
             # result is already aggregated per (id, schema) and sorted via query,
             # so each row is 1 entity
             next_entity = model.get_proxy(
                 {
-                    "id": entity_id,
+                    "id": canonical_id,
                     "schema": schema,
                     "properties": dict(zip(props, values)),
                 }
@@ -330,23 +333,23 @@ class EntityQuery(Query):
 
     def get_query(self) -> str:
         """
-        first get matching entity_ids for given where clause(s),
-        then return 1 row per dataset->entity_id->schema with props and values
+        first get matching canonical_ids for given where clause(s),
+        then return 1 row per dataset->canonical_id->schema with props and values
         as arrays
 
         example:
 
 
-        SELECT dataset, entity_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (
-            SELECT dataset, entity_id, schema, prop, groupUniqArray(value) as values FROM ftm
-            WHERE entity_id IN (
-                SELECT DISTINCT entity_id FROM ftm
+        SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (
+            SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm
+            WHERE canonical_id IN (
+                SELECT DISTINCT canonical_id FROM ftm
                 WHERE schema = 'Person' AND (prop = 'name' AND value = 'Simon')
             )
-            GROUP BY dataset, entity_id, schema, prop
+            GROUP BY dataset, canonical_id, schema, prop
         )
-        GROUP BY dataset, entity_id, schema
-        ORDER BY dataset, entity_id, schema
+        GROUP BY dataset, canonical_id, schema
+        ORDER BY dataset, canonical_id, schema
 
         """
         inner = super().get_query()
@@ -354,26 +357,26 @@ class EntityQuery(Query):
             Query()
             .select(
                 "dataset",
-                "entity_id",
+                "canonical_id",
                 "schema",
                 "prop",
                 "groupUniqArray(value) as values",
             )
-            .where(entity_id__in=inner, dataset=self.dataset)
-            .group_by("dataset", "entity_id", "schema", "prop")
+            .where(canonical_id__in=inner, dataset=self.dataset)
+            .group_by("dataset", "canonical_id", "schema", "prop")
         )
         return str(
             Query(outer)
             .select(
                 "dataset",
-                "entity_id",
+                "canonical_id",
                 "schema",
                 "groupArray(prop) as props",
                 "groupArray(values) as values",
             )
-            .group_by("dataset", "entity_id", "schema")
+            .group_by("dataset", "canonical_id", "schema")
             .order_by(
-                "dataset", "entity_id", "schema"
+                "dataset", "canonical_id", "schema"
             )  # make sure ordering to easier build entities later
         )
 
@@ -405,21 +408,21 @@ class EntityQuery(Query):
             Query()
             .select(
                 "dataset",
-                "entity_id",
+                "canonical_id",
                 "schema",
                 "prop",
                 "groupUniqArray(value) as values",
             )
-            .where(entity_id__in=inner)
-            .group_by("dataset", "entity_id", "schema", "prop")
+            .where(canonical_id__in=inner)
+            .group_by("dataset", "canonical_id", "schema", "prop")
         )
         df = self.driver.query_dataframe(str(q))
         df = (
-            df.groupby(["dataset", "schema", "entity_id", "prop"])
+            df.groupby(["dataset", "schema", "canonical_id", "prop"])
             .agg({"values": _unpack})
             .reset_index()
         )
         df = df.pivot(
-            ["dataset", "entity_id", "schema"], "prop", "values"
+            ["dataset", "canonical_id", "schema"], "prop", "values"
         ).reset_index()
         return df

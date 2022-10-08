@@ -20,7 +20,7 @@ class DatasetTestCase(ClickhouseTestCase):
     def test_dataset_statements_iteration(self):
         ds = Dataset("luanda_leaks")
         stmts = [s for s in ds.statements()]
-        self.assertEqual(len(stmts), 4342)
+        self.assertEqual(len(stmts), 5194)
 
     def test_dataset_get_entity(self):
         ds = Dataset("luanda_leaks")

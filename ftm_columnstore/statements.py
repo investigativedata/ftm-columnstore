@@ -2,7 +2,7 @@
 from datetime import datetime
 from functools import lru_cache
 from hashlib import sha1
-from typing import Iterator, Optional, TypedDict
+from typing import Iterator, TypedDict
 
 import fingerprints.generate
 from followthemoney import model
@@ -25,12 +25,12 @@ class Statement(TypedDict):
 
     id: str
     dataset: str
+    canonical_id: str
     entity_id: str
     schema: str
     prop: str
     prop_type: str
     value: str
-    value_num: Optional[float] = None
     last_seen: datetime
 
 
@@ -51,27 +51,53 @@ def stmt_key(dataset: str, entity_id: str, prop: str, value: str) -> str:
     return sha1(key.encode("utf-8")).hexdigest()
 
 
+def _denamespace(value: str) -> str:
+    # de-namespacing? #FIXME
+    return value.rsplit(".", 1)[0]
+
+
+def _canonize(value: str) -> str:
+    # always use sha1 id for canonical ids, convert entity id if it isn't sha1 yet
+    if len(value) != 40:
+        return make_entity_id(value)
+    try:
+        int(value, 16)
+        return value
+    except ValueError:
+        return make_entity_id(value)
+
+
 def statements_from_entity(entity: dict, dataset: str) -> Iterator[Statement]:
     entity = model.get_proxy(entity)
     if entity.id is None or entity.schema is None:
         return []
-    entity_id = entity.id.rsplit(".", 1)[0]
+    entity_id = _denamespace(str(entity.id))
+    canonical_id = _canonize(entity_id)
+    stub: Statement = {
+        "id": stmt_key(dataset, entity_id, "id", entity_id),
+        "dataset": dataset,
+        "canonical_id": canonical_id,
+        "entity_id": entity_id,
+        "schema": entity.schema.name,
+        "prop": "id",
+        "prop_type": "id",
+        "value": entity_id,
+        "last_seen": datetime.now().isoformat(),
+    }
+    yield stub
     for prop, value in entity.itervalues():
         if value:
-            value_num = None
-            if prop.type.name == "number":
-                value_num = value
-            elif prop.type.name == "entity":
-                value = value.rsplit(".", 1)[0]
+            if prop.type.name == "entity":
+                value = _canonize(_denamespace(value))
             stmt: Statement = {
                 "id": stmt_key(dataset, entity_id, prop.name, value),
                 "dataset": dataset,
+                "canonical_id": canonical_id,
                 "entity_id": entity_id,
                 "schema": entity.schema.name,
                 "prop": prop.name,
                 "prop_type": prop.type.name,
                 "value": value,
-                "value_num": value_num,
                 "last_seen": datetime.now().isoformat(),
             }
             yield stmt
