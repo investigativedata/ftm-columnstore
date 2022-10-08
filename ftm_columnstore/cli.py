@@ -170,6 +170,18 @@ def iterate(obj, dataset, origin, outfile):
         write_object(outfile, entity)
 
 
+@cli.command("canonize", help="Add canonical ids for entities")
+@click.option("-i", "--infile", type=click.File("r"), default="-")
+@click.option("-d", "--dataset", help="dataset identifier", required=True)
+@click.pass_obj
+def canonize(obj, infile, dataset):
+    """infile: csv format canonical_id,entity_id pairs per row"""
+    dataset = _get_dataset(obj, dataset)
+    reader = csv.reader(infile)
+    for canonical_id, entity_id in reader:
+        dataset.canonize(entity_id, canonical_id)
+
+
 @cli.command("statements", help="Dump all statements as csv")
 @click.option("-d", "--dataset", help="Dataset")
 @click.option("--origin")

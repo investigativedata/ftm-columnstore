@@ -106,7 +106,7 @@ class ClickhouseDriver:
         (
             `id`                      FixedString(40) NOT NULL,
             `dataset`                 LowCardinality(String) NOT NULL,
-            `canonical_id`            FixedString(40) NOT NULL,
+            `canonical_id`            String NOT NULL,
             `entity_id`               String NOT NULL,
             `schema`                  LowCardinality(String) NOT NULL,
             `origin`                  LowCardinality(String) NOT NULL,

@@ -7,47 +7,33 @@ from followthemoney.proxy import E
 
 from . import settings
 from .driver import ClickhouseDriver, get_driver
+from .exceptions import EntityNotFound
 from .query import EntityQuery, Query
-from .statements import fingerprints_from_entity, statements_from_entity
+from .statements import Statement, fingerprints_from_entity, statements_from_entity
 from .util import handle_error
 
 log = logging.getLogger(__name__)
 
 
-class BulkWriter:  # FIXME make seperated fingerprints writer?
+class BulkWriter:
     def __init__(
         self,
         dataset: "Dataset",
-        with_fingerprints: Optional[bool] = False,
         origin: Optional[str] = None,
+        table: Optional[str] = None,
         size: Optional[int] = settings.BULK_WRITE_SIZE,
         ignore_errors: Optional[bool] = False,
     ):
         self.dataset = dataset
-        self.with_fingerprints = with_fingerprints
         self.origin = origin or dataset.origin
+        self.table = table or dataset.driver.table
         self.buffer = []
-        self.buffer_fpx = []
         self.size = size
         self.ignore_errors = ignore_errors
-        self.entities = 0
-        self.statements = 0
-        self.statements_fpx = 0
 
-    def put(self, entity: Union[dict, E]):
-        if hasattr(entity, "to_dict"):
-            entity = entity.to_dict()
-        else:
-            entity = dict(entity)
-        self.entities += 1
-        for statement in statements_from_entity(entity, self.dataset.name):
-            self.buffer.append(statement)
-            self.statements += 1
-        if self.with_fingerprints:
-            for statement in fingerprints_from_entity(entity, self.dataset.name):
-                self.buffer_fpx.append(statement)
-                self.statements_fpx += 1
-        if self.entities % self.size == 0:
+    def put(self, statement: Statement):
+        self.buffer.append(statement)
+        if len(self.buffer) % self.size == 0:
             self.flush()
 
     def flush(self):
@@ -56,22 +42,38 @@ class BulkWriter:  # FIXME make seperated fingerprints writer?
         try:
             df = pd.DataFrame(self.buffer)
             df["origin"] = self.origin
-            res = self.dataset.driver.insert(df)
-            log.info(
-                f"[{self.dataset}] Write: {self.entities} entities with {self.statements} statements."
-            )
-            if self.with_fingerprints:
-                df = pd.DataFrame(self.buffer_fpx)
-                df["origin"] = self.origin
-                self.dataset.driver.insert(df, table=self.dataset.driver.table_fpx)
-                log.info(
-                    f"[{self.dataset}] Write: {self.statements_fpx} fingerprint statements."
-                )
+            res = self.dataset.driver.insert(df, table=self.table)
+            log.info(f"[{self.dataset}] Write: {len(self.buffer)} statements.")
             self.buffer = []
-            self.buffer_fpx = []
             return res
         except Exception as e:
             handle_error(log, e, not self.ignore_errors)
+
+
+class EntityBulkWriter(BulkWriter):
+    def __init__(self, *args, **kwargs):
+        self.with_fingerprints = kwargs.pop("with_fingerprints", False)
+        super().__init__(*args, **kwargs)
+        if self.with_fingerprints:
+            # FIXME this is a bit hacky, having sub writers instances...
+            kwargs["table"] = self.dataset.driver.table_fpx
+            self.bulk_fpx = BulkWriter(*args, **kwargs)
+
+    def put(self, entity: Union[dict, E]):
+        if hasattr(entity, "to_dict"):
+            entity = entity.to_dict()
+        else:
+            entity = dict(entity)
+        for statement in statements_from_entity(entity, self.dataset.name):
+            super().put(statement)
+        if self.with_fingerprints:
+            for statement in fingerprints_from_entity(entity, self.dataset.name):
+                self.bulk_fpx.put(statement)
+
+    def flush(self):
+        if self.with_fingerprints:
+            self.bulk_fpx.flush()
+        return super().flush()
 
 
 class Dataset:
@@ -125,17 +127,31 @@ class Dataset:
             return self.driver.execute(stmt)
         return self.drop()
 
-    def put(self, entity, origin: Optional[str] = None):
-        bulk = self.bulk(origin=origin or self.origin)
+    def put(
+        self,
+        entity: E,
+        origin: Optional[str] = None,
+        with_fingerprints: Optional[bool] = False,
+    ):
+        bulk = self.bulk(
+            origin=origin or self.origin, with_fingerprints=with_fingerprints
+        )
         bulk.put(entity)
         return bulk.flush()
 
     def bulk(
         self, origin: Optional[str] = None, with_fingerprints: Optional[bool] = False
-    ) -> "BulkWriter":
-        return BulkWriter(
+    ) -> "EntityBulkWriter":
+        return EntityBulkWriter(
             self,
             with_fingerprints=with_fingerprints,
+            origin=origin or self.origin,
+            ignore_errors=self.ignore_errors,
+        )
+
+    def bulk_statements(self, origin: Optional[str] = None) -> "BulkWriter":
+        return BulkWriter(
+            self,
             origin=origin or self.origin,
             ignore_errors=self.ignore_errors,
         )
@@ -163,11 +179,43 @@ class Dataset:
 
     def get(self, id_: str, canonical: Optional[bool] = True) -> E:
         if canonical:
-            for entity in self.iterate(canonical_id=id_):
+            canonical_id = self.get_canonical_id(id_)
+            for entity in self.iterate(canonical_id=canonical_id):
                 return entity
         else:
             for entity in self.iterate(entity_id=id_):
                 return entity
+
+    def get_canonical_id(self, id_: str, origin: Optional[str] = None) -> str:
+        origin = origin or self.origin
+        for res in (
+            self.Q.select("canonical_id")
+            .where(entity_id=id_, origin=origin)
+            .order_by("last_seen", ascending=False)[0]
+        ):
+            return res[0]
+        # otherwise id_ is already canonized:
+        if self.Q.where(canonical_id=id_, origin=origin).exists():
+            return id_
+        raise EntityNotFound(id_)
+
+    def canonize(self, entity_id: str, canonical_id: str) -> int:
+        """
+        set canonical id for entity and all references, update database
+        """
+        entity_id = str(entity_id)
+        entity = self.get(entity_id)
+        bulk = self.bulk_statements(origin="canonical")
+        # first write references to avoid race condition
+        for e in self.expand(entity):
+            for stmt in statements_from_entity(e, self.name):
+                if stmt["prop_type"] == "entity" and stmt["value"] == entity_id:
+                    stmt["value"] = canonical_id
+                    bulk.put(stmt)
+        # write new entity
+        for stmt in statements_from_entity(entity, self.name, canonical_id):
+            bulk.put(stmt)
+        bulk.flush()
 
     def expand(self, entity: E, levels: Optional[int] = 1) -> Iterator[E]:
         """
@@ -178,8 +226,8 @@ class Dataset:
             # outgoing
             yield from self.resolve(entity, levels)
             # incoming
-            query = EntityQuery(driver=self.driver).where(
-                prop_type="entity", value=entity.id
+            query = self.EQ.where(
+                prop_type="entity", value=self.get_canonical_id(entity.id)
             )
             for entity in query:
                 yield entity
@@ -190,7 +238,8 @@ class Dataset:
         # uniq
         entities = set()
         for e in _expand(entity, levels):
-            entities.add(e)
+            if e.id != entity.id:
+                entities.add(e)
         yield from entities
 
     def resolve(self, entity: E, levels: Optional[int] = 1) -> Iterator[E]:
@@ -209,7 +258,8 @@ class Dataset:
         # uniq
         entities = set()
         for e in _resolve(entity, levels):
-            entities.add(e)
+            if e.id != entity.id:
+                entities.add(e)
         yield from entities
 
     def __iter__(self):
@@ -225,7 +275,7 @@ class Dataset:
         return "<Dataset(%r, %r)>" % (self.driver, self.name)
 
 
-@lru_cache(maxsize=128)
+@lru_cache(128)
 def get_dataset(
     name: str,
     driver: Optional[ClickhouseDriver] = None,

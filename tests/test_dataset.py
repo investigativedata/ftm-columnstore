@@ -61,4 +61,4 @@ class DatasetTestCase(ClickhouseTestCase):
 
         # more levels
         entities = [e for e in ds.expand(isabel, levels=2)]
-        self.assertEqual(len(entities), 219)
+        self.assertEqual(len(entities), 218)
