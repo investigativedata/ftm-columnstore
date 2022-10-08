@@ -77,6 +77,11 @@ class Query:
         for i in res:
             return i[0]
 
+    def exists(self):
+        for res in self.execute(f"SELECT EXISTS ({self})"):
+            return bool(res[0])
+        return False
+
     def execute(self, query: Optional[Union["Query", str]] = None) -> Iterator[Any]:
         """return result iterator"""
         query = query or self.get_query()

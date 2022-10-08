@@ -2,14 +2,14 @@
 from datetime import datetime
 from functools import lru_cache
 from hashlib import sha1
-from typing import Iterator, TypedDict
+from typing import Iterator, Optional, TypedDict
 
 import fingerprints.generate
 from followthemoney import model
 from followthemoney.util import make_entity_id
 
 
-@lru_cache(maxsize=1024 * 1000)  # 1GB
+@lru_cache(1_000_000)
 def _get_fingerprint_id(fingerprint: str) -> str:
     return make_entity_id(fingerprint)
 
@@ -51,28 +51,20 @@ def stmt_key(dataset: str, entity_id: str, prop: str, value: str) -> str:
     return sha1(key.encode("utf-8")).hexdigest()
 
 
+@lru_cache(100_000)
 def _denamespace(value: str) -> str:
     # de-namespacing? #FIXME
     return value.rsplit(".", 1)[0]
 
 
-def _canonize(value: str) -> str:
-    # always use sha1 id for canonical ids, convert entity id if it isn't sha1 yet
-    if len(value) != 40:
-        return make_entity_id(value)
-    try:
-        int(value, 16)
-        return value
-    except ValueError:
-        return make_entity_id(value)
-
-
-def statements_from_entity(entity: dict, dataset: str) -> Iterator[Statement]:
+def statements_from_entity(
+    entity: dict, dataset: str, canonical_id: Optional[str] = None
+) -> Iterator[Statement]:
     entity = model.get_proxy(entity)
     if entity.id is None or entity.schema is None:
         return []
     entity_id = _denamespace(str(entity.id))
-    canonical_id = _canonize(entity_id)
+    canonical_id = canonical_id or entity_id
     stub: Statement = {
         "id": stmt_key(dataset, entity_id, "id", entity_id),
         "dataset": dataset,
@@ -88,7 +80,7 @@ def statements_from_entity(entity: dict, dataset: str) -> Iterator[Statement]:
     for prop, value in entity.itervalues():
         if value:
             if prop.type.name == "entity":
-                value = _canonize(_denamespace(value))
+                value = _denamespace(value)
             stmt: Statement = {
                 "id": stmt_key(dataset, entity_id, prop.name, value),
                 "dataset": dataset,
