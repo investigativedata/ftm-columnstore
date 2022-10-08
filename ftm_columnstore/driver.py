@@ -6,11 +6,13 @@ from clickhouse_driver import Client, errors
 
 from . import settings
 
-from .util import to_numeric
-
 
 def table_exists(e: Exception, table: str) -> bool:
-    return f"Table default.{table} already exists" in str(e)
+    if f"Table default.{table} already exists" in str(e):
+        return True
+    if "projection with this name already exists" in str(e):
+        return True
+    return False
 
 
 class ClickhouseDriver:
@@ -59,10 +61,9 @@ class ClickhouseDriver:
 
     def insert(self, df: pd.DataFrame, table: Optional[str] = None) -> int:
         # https://clickhouse-driver.readthedocs.io/en/latest/features.html#numpy-pandas-support
+        if df.empty:
+            return 0
         table = table or self.table
-        if "value_num" in df:
-            df["value_num"] = df["value_num"].map(to_numeric)
-        df = df.applymap(lambda x: None if x == "" or pd.isna(x) else x)
         with self.get_connection() as conn:
             res = conn.insert_dataframe("INSERT INTO %s VALUES" % table, df)
         return res
@@ -105,14 +106,13 @@ class ClickhouseDriver:
         CREATE TABLE {table}
         (
             `id`                      FixedString(40) NOT NULL,
-            `dataset`                 String NOT NULL,
+            `dataset`                 LowCardinality(String) NOT NULL,
             `entity_id`               String NOT NULL,
             `schema`                  LowCardinality(String) NOT NULL,
-            `origin`                  String NOT NULL,
+            `origin`                  LowCardinality(String) NOT NULL,
             `prop`                    LowCardinality(String) NOT NULL,
             `prop_type`               LowCardinality(String) NOT NULL,
             `value`                   String NOT NULL,
-            `value_num`               Float NULL,
             `last_seen`               DateTime NOT NULL
         ) ENGINE = ReplacingMergeTree(last_seen)
         PRIMARY KEY ({primary_key})
@@ -122,7 +122,7 @@ class ClickhouseDriver:
         CREATE TABLE {table}
         (
             `id`                      FixedString(40) NOT NULL,
-            `dataset`                 String NOT NULL,
+            `dataset`                 LowCardinality(String) NOT NULL,
             `entity_id`               String NOT NULL,
             `schema`                  LowCardinality(String) NOT NULL,
             `prop`                    LowCardinality(String) NOT NULL,
