@@ -1,9 +1,4 @@
-import uuid
-
-from followthemoney import model
 from tests.util import ClickhouseTestCase
-
-from ftm_columnstore import Dataset
 
 
 class IOTestCase(ClickhouseTestCase):
@@ -13,7 +8,7 @@ class IOTestCase(ClickhouseTestCase):
             f"SELECT count(*) FROM {self.driver.table} WHERE dataset = 'luanda_leaks'"
         )
         count = count[0][0]
-        self.assertEqual(count, 4342)
+        self.assertEqual(count, 5194)
 
     def test_io_import_with_fpx(self):
         # testdata already imported during tearUp
@@ -21,4 +16,4 @@ class IOTestCase(ClickhouseTestCase):
             f"SELECT count(*) FROM {self.driver.table} WHERE dataset = 'luanda_leaks_fpx'"
         )
         count = count[0][0]
-        self.assertEqual(count, 4342)
+        self.assertEqual(count, 5194)

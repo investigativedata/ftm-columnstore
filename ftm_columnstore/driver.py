@@ -101,12 +101,12 @@ class ClickhouseDriver:
 
     @property
     def create_statements(self) -> Iterable[str]:
-        UNIQUE = ("dataset", "entity_id", "schema", "prop", "origin", "value")
         CREATE_TABLE = """
         CREATE TABLE {table}
         (
             `id`                      FixedString(40) NOT NULL,
             `dataset`                 LowCardinality(String) NOT NULL,
+            `canonical_id`            FixedString(40) NOT NULL,
             `entity_id`               String NOT NULL,
             `schema`                  LowCardinality(String) NOT NULL,
             `origin`                  LowCardinality(String) NOT NULL,
@@ -118,6 +118,7 @@ class ClickhouseDriver:
         PRIMARY KEY ({primary_key})
         ORDER BY ({order_by})
         """
+
         CREATE_TABLE_FPX = """
         CREATE TABLE {table}
         (
@@ -134,9 +135,8 @@ class ClickhouseDriver:
         ORDER BY ({order_by})
         """
 
-        # implicit enum types
-        primary_key = ", ".join(UNIQUE[:4])
-        order_by = ", ".join(UNIQUE)
+        primary_key = "dataset,schema,canonical_id,entity_id,origin,prop,value"
+        order_by = primary_key
         create_table = CREATE_TABLE.format(
             table=self.table,
             primary_key=primary_key,
@@ -147,24 +147,22 @@ class ClickhouseDriver:
             primary_key="fingerprint_id,schema,dataset",
             order_by="fingerprint_id,schema,dataset",
         )
-        projection_values = f"""
-        ALTER TABLE {self.table} ADD PROJECTION {self.table}_values (
-            SELECT *
-            ORDER BY value,prop,dataset,schema
+        projections = (
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_values (
+                SELECT * ORDER BY value,prop)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_canonical_id (
+                SELECT * ORDER BY canonical_id,prop)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_entity_id (
+                SELECT * ORDER BY entity_id,prop)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_prop_type (
+                SELECT * ORDER BY prop_type,schema,dataset)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_prop (
+                SELECT * ORDER BY prop,schema,dataset)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_entities (
+                SELECT dataset,entity_id,schema,prop,groupUniqArray(value) as values
+                GROUP BY dataset,entity_id,schema,prop)""",
         )
-        """
-        projection_entities = f"""
-        ALTER TABLE {self.table} ADD PROJECTION {self.table}_entities (
-            SELECT dataset,entity_id,schema,prop,groupUniqArray(value) as values
-            GROUP BY dataset,entity_id,schema,prop
-        )
-        """
-        return (
-            create_table,
-            create_table_fpx,
-            projection_values,
-            projection_entities,
-        )
+        return (create_table, create_table_fpx, *projections)
 
     @property
     def drop_statements(self) -> str:
