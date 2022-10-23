@@ -236,5 +236,12 @@ def db_query(obj, query, outfile):
     df.to_csv(outfile, index=False)
 
 
+@cli.command("optimize", help="run table optimization")
+@click.pass_obj
+def db_optimize(obj):
+    driver = _get_driver(obj)
+    driver.execute(f"OPTIMIZE TABLE {driver.table} FINAL DEDUPLICATE")
+
+
 # Register with main FtM command-line tool.
 main.add_command(cli, name="cstore")

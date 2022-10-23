@@ -7,11 +7,10 @@ from typing import Iterator, Optional, TypedDict
 import fingerprints.generate
 from followthemoney import model
 from followthemoney.util import make_entity_id
+from libindic.soundex import Soundex
+from metaphone import doublemetaphone
 
-
-@lru_cache(1_000_000)
-def _get_fingerprint_id(fingerprint: str) -> str:
-    return make_entity_id(fingerprint)
+SX = Soundex()
 
 
 class Statement(TypedDict):
@@ -31,18 +30,48 @@ class Statement(TypedDict):
     prop: str
     prop_type: str
     value: str
-    last_seen: datetime
+    ts: datetime
+    was_canonized: bool
 
 
-class FingerprintStatement(TypedDict):
-    """A statement describing a fingerprint for an entity"""
+class Fingerprints(TypedDict):
+    fingerprint: str
+    fingerprint_id: str
+    soundex: str
+    soundex_id: str
+    metaphone1: str
+    metaphone1_id: str
+    metaphone2: Optional[str] = None
+    metaphone2_id: Optional[str] = None
+
+
+class FingerprintStatement(Fingerprints):
+    """A statement describing fingerprints and phonetic algorithms for an
+    entity, useful for matching"""
 
     id: str
     dataset: str
     entity_id: str
     schema: str
-    fingerprint: str
-    fingerprint_id: str
+
+
+@lru_cache(1_000_000)
+def fingerprint(value: str) -> Fingerprints:
+    fingerprint = fingerprints.generate(value)
+    soundex = SX.soundex(value)
+    metaphone1, metaphone2 = doublemetaphone(value)
+    metaphone2 = metaphone2 or None
+    fp: Fingerprints = {
+        "fingerprint": fingerprint,
+        "fingerprint_id": make_entity_id(fingerprint),
+        "soundex": soundex,
+        "soundex_id": make_entity_id(soundex),
+        "metaphone1": metaphone1,
+        "metaphone1_id": make_entity_id(metaphone1),
+        "metaphone2": metaphone2,
+        "metaphone2_id": make_entity_id(metaphone2),
+    }
+    return fp
 
 
 def stmt_key(dataset: str, entity_id: str, prop: str, value: str) -> str:
@@ -58,7 +87,10 @@ def _denamespace(value: str) -> str:
 
 
 def statements_from_entity(
-    entity: dict, dataset: str, canonical_id: Optional[str] = None
+    entity: dict,
+    dataset: str,
+    canonical_id: Optional[str] = None,
+    was_canonized: Optional[bool] = False,
 ) -> Iterator[Statement]:
     entity = model.get_proxy(entity)
     if entity.id is None or entity.schema is None:
@@ -74,7 +106,8 @@ def statements_from_entity(
         "prop": "id",
         "prop_type": "id",
         "value": entity_id,
-        "last_seen": datetime.now().isoformat(),
+        "ts": datetime.now(),
+        "was_canonized": was_canonized,
     }
     yield stub
     for prop, value in entity.itervalues():
@@ -90,7 +123,8 @@ def statements_from_entity(
                 "prop": prop.name,
                 "prop_type": prop.type.name,
                 "value": value,
-                "last_seen": datetime.now().isoformat(),
+                "ts": datetime.now(),
+                "was_canonized": was_canonized,
             }
             yield stmt
 
@@ -113,16 +147,16 @@ def fingerprints_from_entity(
     for prop, value in entity.itervalues():
         if value:
             if prop.type.name == "name":
-                fingerprint = fingerprints.generate(value)
-                fingerprint_id = make_entity_id(fingerprint)
+                fingerprints: Fingerprints = fingerprint(value)
                 stmt: FingerprintStatement = {
-                    "id": stmt_key(dataset, entity_id, prop.name, value),
-                    "dataset": dataset,
-                    "entity_id": entity_id,
-                    "schema": entity.schema.name,
-                    "prop": prop.name,
-                    "fingerprint": fingerprint,
-                    "fingerprint_id": fingerprint_id,
+                    **{
+                        "id": stmt_key(dataset, entity_id, prop.name, value),
+                        "dataset": dataset,
+                        "entity_id": entity_id,
+                        "schema": entity.schema.name,
+                        "prop": prop.name,
+                    },
+                    **fingerprints,
                 }
                 yield stmt
 

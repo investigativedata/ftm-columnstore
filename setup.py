@@ -32,6 +32,9 @@ setup(
         "pandas",
         "pyicu",
         "structlog",
+        "libindic-soundex",
+        "libindic-util",
+        "metaphone",
     ],
     entry_points={"followthemoney.cli": ["cstore = ftm_columnstore.cli:cli"]},
 )

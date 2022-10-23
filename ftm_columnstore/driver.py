@@ -101,55 +101,52 @@ class ClickhouseDriver:
 
     @property
     def create_statements(self) -> Iterable[str]:
-        CREATE_TABLE = """
-        CREATE TABLE {table}
+        create_table = f"""
+        CREATE TABLE {self.table}
         (
-            `id`                      FixedString(40) NOT NULL,
-            `dataset`                 LowCardinality(String) NOT NULL,
-            `canonical_id`            String NOT NULL,
-            `entity_id`               String NOT NULL,
-            `schema`                  LowCardinality(String) NOT NULL,
-            `origin`                  LowCardinality(String) NOT NULL,
-            `prop`                    LowCardinality(String) NOT NULL,
-            `prop_type`               LowCardinality(String) NOT NULL,
-            `value`                   String NOT NULL,
-            `last_seen`               DateTime NOT NULL
-        ) ENGINE = ReplacingMergeTree(last_seen)
-        PRIMARY KEY ({primary_key})
-        ORDER BY ({order_by})
+            `id`                      FixedString(40),
+            `dataset`                 LowCardinality(String),
+            `canonical_id`            String,
+            `entity_id`               String,
+            `schema`                  LowCardinality(String),
+            `origin`                  LowCardinality(String),
+            `prop`                    LowCardinality(String),
+            `prop_type`               LowCardinality(String),
+            `value`                   String,
+            `ts`                      DateTime64,
+            `was_canonized`           Bool
+        ) ENGINE = ReplacingMergeTree(ts)
+        PRIMARY KEY (dataset,schema,canonical_id)
+        ORDER BY (dataset,schema,canonical_id,entity_id,origin,prop,value)
         """
 
-        CREATE_TABLE_FPX = """
-        CREATE TABLE {table}
+        create_table_fpx = f"""
+        CREATE TABLE {self.table_fpx}
         (
-            `id`                      FixedString(40) NOT NULL,
-            `dataset`                 LowCardinality(String) NOT NULL,
-            `entity_id`               String NOT NULL,
-            `schema`                  LowCardinality(String) NOT NULL,
-            `prop`                    LowCardinality(String) NOT NULL,
-            `fingerprint`             String NOT NULL,
-            `fingerprint_id`          FixedString(40) NOT NULL,
+            `id`                      FixedString(40),
+            `dataset`                 LowCardinality(String),
+            `entity_id`               String,
+            `schema`                  LowCardinality(String),
+            `prop`                    LowCardinality(String),
+            `fingerprint`             String,
+            `fingerprint_id`          FixedString(40),
+            `soundex`                 String,
+            `soundex_id`              FixedString(40),
+            `metaphone1`              String,
+            `metaphone1_id`           FixedString(40),
+            `metaphone2`              String NULL,
+            `metaphone2_id`           FixedString(40) NULL,
             INDEX fp_ix (fingerprint) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
-        PRIMARY KEY ({primary_key})
-        ORDER BY ({order_by})
+        PRIMARY KEY (fingerprint_id,schema,dataset)
+        ORDER BY (fingerprint_id,schema,dataset)
         """
 
-        primary_key = "dataset,schema,canonical_id"
-        order_by = "dataset,schema,canonical_id,entity_id,origin,prop,value"
-        create_table = CREATE_TABLE.format(
-            table=self.table,
-            primary_key=primary_key,
-            order_by=order_by,
-        )
-        create_table_fpx = CREATE_TABLE_FPX.format(
-            table=self.table_fpx,
-            primary_key="fingerprint_id,schema,dataset",
-            order_by="fingerprint_id,schema,dataset",
-        )
         projections = (
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_values (
                 SELECT * ORDER BY value,prop)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_canonical_lookup (
+                SELECT * ORDER BY entity_id,canonical_id)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_canonical_id (
                 SELECT * ORDER BY canonical_id,prop)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_entity_id (
@@ -159,8 +156,14 @@ class ClickhouseDriver:
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_prop (
                 SELECT * ORDER BY prop,schema,dataset)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_entities (
-                SELECT dataset,entity_id,schema,prop,groupUniqArray(value) as values
-                GROUP BY dataset,entity_id,schema,prop)""",
+                SELECT dataset,canonical_id,schema,prop,groupUniqArray(value) as values
+                GROUP BY dataset,canonical_id,schema,prop)""",
+            f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_soundex (
+                SELECT * ORDER BY soundex_id,soundex,schema,dataset)""",
+            f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_metaphone1 (
+                SELECT * ORDER BY metaphone1_id,metaphone1,schema,dataset)""",
+            f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_metaphone2 (
+                SELECT * ORDER BY metaphone2_id,metaphone2,schema,dataset)""",
         )
         return (create_table, create_table_fpx, *projections)
 

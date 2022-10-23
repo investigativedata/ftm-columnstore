@@ -4,6 +4,7 @@ from typing import Iterator, Optional, Union
 
 import pandas as pd
 from followthemoney.proxy import E
+from followthemoney.util import make_entity_id
 
 from . import settings
 from .driver import ClickhouseDriver, get_driver
@@ -95,15 +96,7 @@ class Dataset:
         log.info("Dropping ftm-store: %s" % self.name)
         where = self.Q.where_part
         stmt = f"DELETE FROM {self.driver.table} {where}"
-        try:
-            return self.driver.execute(stmt)
-        except Exception as e:
-            handle_error(
-                log,
-                e,
-                not self.ignore_errors,
-                dataset=self.name,
-            )
+        return self._execute(stmt)
 
     def delete(
         self,
@@ -124,7 +117,7 @@ class Dataset:
             q = q.where(origin=origin)
         if filtered:
             stmt = f"DELETE FROM {self.driver.table} {q.where_part}"
-            return self.driver.execute(stmt)
+            return self._execute(stmt)
         return self.drop()
 
     def put(
@@ -190,8 +183,8 @@ class Dataset:
         origin = origin or self.origin
         for res in (
             self.Q.select("canonical_id")
-            .where(entity_id=id_, origin=origin)
-            .order_by("last_seen", ascending=False)[0]
+            .where(entity_id=id_, origin=origin, was_canonized=False)
+            .order_by("ts", ascending=False)[0]
         ):
             return res[0]
         # otherwise id_ is already canonized:
@@ -199,23 +192,42 @@ class Dataset:
             return id_
         raise EntityNotFound(id_)
 
-    def canonize(self, entity_id: str, canonical_id: str) -> int:
+    def canonize(
+        self, entity_id: str, canonical_id: str, sync: Optional[bool] = False
+    ) -> int:
         """
         set canonical id for entity and all references, update database
         """
         entity_id = str(entity_id)
         entity = self.get(entity_id)
-        bulk = self.bulk_statements(origin="canonical")
         # first write references to avoid race condition
+        bulk = self.bulk_statements()
         for e in self.expand(entity):
+            new_ref_id = make_entity_id(canonical_id, e.id)
             for stmt in statements_from_entity(e, self.name):
+                # mark old stmt as canonized
+                old_stmt = stmt.copy()
+                old_stmt["was_canonized"] = True
+                bulk.put(old_stmt)
+                # write new canonized stmt
+                stmt["canonical_id"] = new_ref_id
                 if stmt["prop_type"] == "entity" and stmt["value"] == entity_id:
                     stmt["value"] = canonical_id
-                    bulk.put(stmt)
-        # write new entity
+                bulk.put(stmt)
+
+        # write new entity statements
         for stmt in statements_from_entity(entity, self.name, canonical_id):
             bulk.put(stmt)
+
+        # mark old entity statements as canonized
+        for stmt in statements_from_entity(entity, self.name, was_canonized=True):
+            bulk.put(stmt)
+
         bulk.flush()
+
+        if sync:
+            # make sure dedupe
+            self.driver.execute(f"OPTIMIZE TABLE {self.driver.table} FINAL DEDUPLICATE")
 
     def expand(self, entity: E, levels: Optional[int] = 1) -> Iterator[E]:
         """
@@ -230,7 +242,7 @@ class Dataset:
                 prop_type="entity", value=self.get_canonical_id(entity.id)
             )
             for entity in query:
-                yield entity
+                yield self.get(entity.id)  # ensure canonical entity
                 if levels - 1 > 0:
                     yield from self.resolve(entity, levels - 1)
                     yield from _expand(entity, levels - 1)
@@ -273,6 +285,17 @@ class Dataset:
 
     def __repr__(self):
         return "<Dataset(%r, %r)>" % (self.driver, self.name)
+
+    def _execute(self, stmt: str):
+        try:
+            return self.driver.execute(stmt)
+        except Exception as e:
+            handle_error(
+                log,
+                e,
+                not self.ignore_errors,
+                dataset=self.name,
+            )
 
 
 @lru_cache(128)

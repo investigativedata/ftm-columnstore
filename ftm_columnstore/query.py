@@ -50,8 +50,8 @@ class Query:
         self.order_direction = order_direction
         self.limit = limit
         self.offset = offset
-        self.where_lookup = where_lookup
         self.having_lookup = having_lookup
+        self.where_lookup = where_lookup
 
     def __str__(self) -> str:
         return self.get_query()
@@ -159,6 +159,7 @@ class Query:
         (prop="name" AND value="foo")
         """
         meta_fields = {
+            "id",
             "dataset",
             "schema",
             "origin",
@@ -169,18 +170,18 @@ class Query:
             "value",
             "fingerprint",
             "fingerprint_id",
+            "was_canonized",
         }
         meta_parts = set()
         parts = set()
         lookup = clean_dict(lookup)
 
-        def _get_part(key: str, value: str, operator: Optional[str] = None) -> str:
+        def _get_part(
+            key: str, value: Union[str | bool], operator: Optional[str] = None
+        ) -> str:
             operator = operator or "="
             if key in enums.PROPERTIES:
-                value_field = "value"
-                if TYPES.get(key) == "number":
-                    value_field = "value_num"
-                return f"(prop = '{key}' AND {value_field} {operator} {value})"
+                return f"(prop = '{key}' AND value {operator} {value})"
             return f"{key} {operator} {value}"
 
         for field, value in lookup.items():
@@ -191,6 +192,9 @@ class Query:
                     if field not in enums.PROPERTIES:
                         raise InvalidQuery(f"Lookup `{field}`: Invalid FtM property.")
                     raise InvalidQuery(f"Lookup `{field}` not any of {meta_fields}")
+
+            if isinstance(value, bool):
+                value = int(value)
 
             if operator:
                 if len(operator) > 1:
@@ -308,6 +312,14 @@ class EntityQuery(Query):
 
     fields = ("DISTINCT canonical_id",)
 
+    def __init__(self, *args, **kwargs):
+        # default: dont include old statements replaced by canonized ones
+        where_lookup = kwargs.pop("where_lookup", {})
+        was_canonized = where_lookup.pop("was_canonized", False)
+        where_lookup["was_canonized"] = was_canonized
+        kwargs["where_lookup"] = where_lookup
+        super().__init__(*args, **kwargs)
+
     @property
     def dataset(self):
         if self.where_lookup is not None:
@@ -318,7 +330,7 @@ class EntityQuery(Query):
         entity = None
         for dataset, canonical_id, schema, props, values in res:
             # result is already aggregated per (id, schema) and sorted via query,
-            # so each row is 1 entity
+            # so each row is 1 entity; we still need to merge different schemata
             next_entity = model.get_proxy(
                 {
                     "id": canonical_id,
