@@ -163,3 +163,4 @@ def fingerprints_from_entity(
 
 COLUMNS = tuple(Statement.__annotations__.keys())
 COLUMNS_FPX = tuple(FingerprintStatement.__annotations__.keys())
+FPX_ALGORITHMS = ("soundex", "metaphone1", "metaphone2")

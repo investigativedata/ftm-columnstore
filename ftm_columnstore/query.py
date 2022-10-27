@@ -9,8 +9,26 @@ from followthemoney.proxy import E
 from . import enums
 from .driver import ClickhouseDriver, get_driver
 from .exceptions import InvalidQuery
+from .statements import FPX_ALGORITHMS
 
 TYPES = {p.name: p.type.name for p in model.properties}
+
+META_FIELDS = {
+    "id",
+    "dataset",
+    "schema",
+    "origin",
+    "canonical_id",
+    "entity_id",
+    "prop",
+    "prop_type",
+    "value",
+    "fingerprint",
+    "fingerprint_id",
+    "was_canonized",
+    *FPX_ALGORITHMS,
+    *(f"{a}_id" for a in FPX_ALGORITHMS),
+}
 
 
 class Query:
@@ -151,27 +169,16 @@ class Query:
         return ", ".join(self.fields or "*")
 
     def _get_lookup_part(
-        self, lookup: dict, strict_fields: Optional[bool] = True
+        self,
+        lookup: dict,
+        strict_fields: Optional[bool] = True,
+        how: Optional[str] = "OR",
     ) -> str:
         """for where and having clause
 
         lookups for ftm properties (name="foo") will be rewritten as
         (prop="name" AND value="foo")
         """
-        meta_fields = {
-            "id",
-            "dataset",
-            "schema",
-            "origin",
-            "canonical_id",
-            "entity_id",
-            "prop",
-            "prop_type",
-            "value",
-            "fingerprint",
-            "fingerprint_id",
-            "was_canonized",
-        }
         meta_parts = set()
         parts = set()
         lookup = clean_dict(lookup)
@@ -188,10 +195,10 @@ class Query:
             field, *operator = field.split("__")
 
             if strict_fields:
-                if field not in meta_fields | enums.PROPERTIES:
+                if field not in META_FIELDS | enums.PROPERTIES:
                     if field not in enums.PROPERTIES:
                         raise InvalidQuery(f"Lookup `{field}`: Invalid FtM property.")
-                    raise InvalidQuery(f"Lookup `{field}` not any of {meta_fields}")
+                    raise InvalidQuery(f"Lookup `{field}` not any of {META_FIELDS}")
 
             if isinstance(value, bool):
                 value = int(value)
@@ -220,7 +227,7 @@ class Query:
             else:
                 part = _get_part(field, f"'{value}'")
 
-            if field in meta_fields:
+            if field in META_FIELDS:
                 meta_parts.add(part)
             else:
                 parts.add(part)
@@ -231,7 +238,9 @@ class Query:
                 " AND ".join(sorted(meta_parts))
             )  # sort for easier testing
         if parts:
-            final_parts.append(" OR ".join(sorted(parts)))  # sort for easier testing
+            final_parts.append(
+                f" {how} ".join(sorted(parts))
+            )  # sort for easier testing
         return " AND ".join(final_parts)
 
     @property
@@ -244,7 +253,7 @@ class Query:
     def having_part(self) -> str:
         if not self.group_part or not self.having_lookup:
             return ""
-        return " HAVING " + self._get_lookup_part(self.having_lookup, False)
+        return " HAVING " + self._get_lookup_part(self.having_lookup, False, "AND")
 
     @property
     def group_part(self) -> str:

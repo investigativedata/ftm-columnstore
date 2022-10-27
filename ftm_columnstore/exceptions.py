@@ -8,3 +8,7 @@ class InvalidQuery(Exception):
 
 class EntityNotFound(Exception):
     pass
+
+
+class InvalidAlgorithm(Exception):
+    pass

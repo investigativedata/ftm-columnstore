@@ -91,6 +91,7 @@ class Dataset:
         self.ignore_errors = ignore_errors
         self.Q = Query(driver=driver).where(dataset=name, origin=origin)
         self.EQ = EntityQuery(driver=driver).where(dataset=name, origin=origin)
+        self.FPQ = Query(driver=driver, from_=self.driver.table_fpx).where(dataset=name)
 
     def drop(self):
         log.info("Dropping ftm-store: %s" % self.name)
@@ -226,7 +227,7 @@ class Dataset:
         bulk.flush()
 
         if sync:
-            # make sure dedupe
+            # make sure dedupe happens in sync
             self.driver.execute(f"OPTIMIZE TABLE {self.driver.table} FINAL DEDUPLICATE")
 
     def expand(self, entity: E, levels: Optional[int] = 1) -> Iterator[E]:

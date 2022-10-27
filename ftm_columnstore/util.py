@@ -1,6 +1,7 @@
+import itertools
 import logging
 import re
-from typing import Any, Optional, Union
+from typing import Any, Iterable, Optional, Union
 
 import pandas as pd
 from click import File
@@ -62,3 +63,12 @@ def to_numeric(value: str):
             return to_numeric(value.replace(",", ""))
         if re.match(NUMERIC_DE, value):
             return to_numeric(value.replace(".", "").replace(",", "."))
+
+
+def slicer(n: int, iterable: Iterable):
+    it = iter(iterable)
+    while True:
+        chunk = tuple(itertools.islice(it, n))
+        if not chunk:
+            return
+        yield chunk
