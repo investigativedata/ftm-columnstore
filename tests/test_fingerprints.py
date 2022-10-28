@@ -15,7 +15,7 @@ class DatasetTestCase(ClickhouseTestCase):
                 GROUP BY soundex
                 HAVING entities > 2
             ))"""
-        ds = Dataset("luanda_leaks_fpx")
+        ds = Dataset("luanda_leaks")
         entities = [e for e in ds.EQ.where(entity_id__in=q)]
         self.assertEqual(len(entities), 6)
         names = [e.caption for e in entities]

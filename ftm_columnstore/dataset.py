@@ -1,5 +1,5 @@
 import logging
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from typing import Iterator, Optional, Union
 
 import pandas as pd
@@ -8,9 +8,15 @@ from followthemoney.util import make_entity_id
 
 from . import settings
 from .driver import ClickhouseDriver, get_driver
+from .enums import FLAG
 from .exceptions import EntityNotFound
 from .query import EntityQuery, Query
-from .statements import Statement, fingerprints_from_entity, statements_from_entity
+from .statements import (
+    Statement,
+    fingerprints_from_entity,
+    statements_from_entity,
+    stmt_key,
+)
 from .util import handle_error
 
 log = logging.getLogger(__name__)
@@ -65,7 +71,9 @@ class EntityBulkWriter(BulkWriter):
             entity = entity.to_dict()
         else:
             entity = dict(entity)
-        for statement in statements_from_entity(entity, self.dataset.name):
+        for statement in statements_from_entity(
+            entity, self.dataset.name, self.dataset.origin
+        ):
             super().put(statement)
         if self.with_fingerprints:
             for statement in fingerprints_from_entity(entity, self.dataset.name):
@@ -143,12 +151,9 @@ class Dataset:
             ignore_errors=self.ignore_errors,
         )
 
-    def bulk_statements(self, origin: Optional[str] = None) -> "BulkWriter":
-        return BulkWriter(
-            self,
-            origin=origin or self.origin,
-            ignore_errors=self.ignore_errors,
-        )
+    @cached_property
+    def bulk_statements(self) -> "BulkWriter":
+        return BulkWriter(self, self.origin, ignore_errors=self.ignore_errors)
 
     def iterate(
         self,
@@ -184,7 +189,7 @@ class Dataset:
         origin = origin or self.origin
         for res in (
             self.Q.select("canonical_id")
-            .where(entity_id=id_, origin=origin, was_canonized=False)
+            .where(entity_id=id_, origin=origin, sflag__not=FLAG.canonized.value)
             .order_by("ts", ascending=False)[0]
         ):
             return res[0]
@@ -197,37 +202,43 @@ class Dataset:
         self, entity_id: str, canonical_id: str, sync: Optional[bool] = False
     ) -> int:
         """
-        set canonical id for entity and all references, update database
+        set canonical id for entity and all references, add flag for old statements
+        to exclude from default query
         """
         entity_id = str(entity_id)
         entity = self.get(entity_id)
         # first write references to avoid race condition
-        bulk = self.bulk_statements()
+        bulk = self.bulk_statements
+        # update_bulk = self.bulk_statements_canonize
         for e in self.expand(entity):
             new_ref_id = make_entity_id(canonical_id, e.id)
-            for stmt in statements_from_entity(e, self.name):
-                # mark old stmt as canonized
+            for stmt in statements_from_entity(e, self.name, self.origin):
+                # write old stmt as canonized
                 old_stmt = stmt.copy()
-                old_stmt["was_canonized"] = True
+                old_stmt["sflag"] = FLAG.canonized.value
                 bulk.put(old_stmt)
                 # write new canonized stmt
                 stmt["canonical_id"] = new_ref_id
                 if stmt["prop_type"] == "entity" and stmt["value"] == entity_id:
                     stmt["value"] = canonical_id
+                stmt["id"] = stmt_key(**stmt)
                 bulk.put(stmt)
 
         # write new entity statements
-        for stmt in statements_from_entity(entity, self.name, canonical_id):
+        for stmt in statements_from_entity(
+            entity, self.name, self.origin, canonical_id
+        ):
             bulk.put(stmt)
 
-        # mark old entity statements as canonized
-        for stmt in statements_from_entity(entity, self.name, was_canonized=True):
+        # mark write old entity statements as canonized
+        for stmt in statements_from_entity(
+            entity, self.name, self.origin, sflag=FLAG.canonized.value
+        ):
             bulk.put(stmt)
-
-        bulk.flush()
 
         if sync:
             # make sure dedupe happens in sync
+            bulk.flush()
             self.driver.execute(f"OPTIMIZE TABLE {self.driver.table} FINAL DEDUPLICATE")
 
     def expand(self, entity: E, levels: Optional[int] = 1) -> Iterator[E]:

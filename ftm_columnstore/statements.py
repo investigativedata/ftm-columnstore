@@ -24,6 +24,7 @@ class Statement(TypedDict):
 
     id: str
     dataset: str
+    origin: str
     canonical_id: str
     entity_id: str
     schema: str
@@ -31,18 +32,15 @@ class Statement(TypedDict):
     prop_type: str
     value: str
     ts: datetime
-    was_canonized: bool
+    sflag: Optional[str] = None
 
 
 class Fingerprints(TypedDict):
     fingerprint: str
     fingerprint_id: str
     soundex: str
-    soundex_id: str
     metaphone1: str
-    metaphone1_id: str
     metaphone2: Optional[str] = None
-    metaphone2_id: Optional[str] = None
 
 
 class FingerprintStatement(Fingerprints):
@@ -65,18 +63,22 @@ def fingerprint(value: str) -> Fingerprints:
         "fingerprint": fingerprint,
         "fingerprint_id": make_entity_id(fingerprint),
         "soundex": soundex,
-        "soundex_id": make_entity_id(soundex),
         "metaphone1": metaphone1,
-        "metaphone1_id": make_entity_id(metaphone1),
         "metaphone2": metaphone2,
-        "metaphone2_id": make_entity_id(metaphone2),
     }
     return fp
 
 
-def stmt_key(dataset: str, entity_id: str, prop: str, value: str) -> str:
+def stmt_key(
+    dataset: str,
+    entity_id: str,
+    prop: str,
+    value: str,
+    origin: Optional[str] = "",
+    **kwargs,
+) -> str:
     """Hash the key properties of a statement record to make a unique ID."""
-    key = f"{dataset}.{entity_id}.{prop}.{value}"
+    key = f"{dataset}.{origin}.{entity_id}.{prop}.{value}"
     return sha1(key.encode("utf-8")).hexdigest()
 
 
@@ -89,8 +91,9 @@ def _denamespace(value: str) -> str:
 def statements_from_entity(
     entity: dict,
     dataset: str,
+    origin: Optional[str] = "",
     canonical_id: Optional[str] = None,
-    was_canonized: Optional[bool] = False,
+    sflag: Optional[str] = None,
 ) -> Iterator[Statement]:
     entity = model.get_proxy(entity)
     if entity.id is None or entity.schema is None:
@@ -98,7 +101,7 @@ def statements_from_entity(
     entity_id = _denamespace(str(entity.id))
     canonical_id = canonical_id or entity_id
     stub: Statement = {
-        "id": stmt_key(dataset, entity_id, "id", entity_id),
+        "id": stmt_key(dataset, origin, entity_id, "id", entity_id),
         "dataset": dataset,
         "canonical_id": canonical_id,
         "entity_id": entity_id,
@@ -107,7 +110,7 @@ def statements_from_entity(
         "prop_type": "id",
         "value": entity_id,
         "ts": datetime.now(),
-        "was_canonized": was_canonized,
+        "sflag": sflag,
     }
     yield stub
     for prop, value in entity.itervalues():
@@ -115,7 +118,7 @@ def statements_from_entity(
             if prop.type.name == "entity":
                 value = _denamespace(value)
             stmt: Statement = {
-                "id": stmt_key(dataset, entity_id, prop.name, value),
+                "id": stmt_key(dataset, origin, entity_id, prop.name, value),
                 "dataset": dataset,
                 "canonical_id": canonical_id,
                 "entity_id": entity_id,
@@ -124,7 +127,7 @@ def statements_from_entity(
                 "prop_type": prop.type.name,
                 "value": value,
                 "ts": datetime.now(),
-                "was_canonized": was_canonized,
+                "sflag": sflag,
             }
             yield stmt
 

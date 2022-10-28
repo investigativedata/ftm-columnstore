@@ -2,8 +2,8 @@ import os
 from unittest import TestCase
 
 from ftm_columnstore import settings
-from ftm_columnstore.io import import_json
 from ftm_columnstore.driver import get_driver
+from ftm_columnstore.io import import_json
 
 
 def get_clickhouse_test_driver():
@@ -23,10 +23,8 @@ class ClickhouseTestCase(TestCase):
     def setUpClass(cls):
         cls.driver = get_clickhouse_test_driver()
         cls.driver.init(recreate=True)
-        res1 = import_json(cls.data_file, "luanda_leaks")
-        res2 = import_json(cls.data_file, "luanda_leaks_fpx", with_fingerprints=True)
-        assert res1 == 852  # number of entities
-        assert res1 == res2
+        res = import_json(cls.data_file, "luanda_leaks")
+        assert res == 852  # number of entities
 
     @classmethod
     def tearDownClass(cls):

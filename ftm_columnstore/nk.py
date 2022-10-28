@@ -57,16 +57,11 @@ class ClickhouseLoader:
         q = (
             Query(self.driver.table_fpx)
             .select(
-                f"{algorithm}_id, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids"
+                f"{algorithm}, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids"
             )
-            .where(
-                **{
-                    "prop": "name",
-                    f"{algorithm}_id__null": False,
-                    "dataset__in": datasets,
-                }
-            )
-            .group_by(f"{algorithm}_id")
+            .where(prop="name", dataset__in=datasets)
+            .where(**{f"{algorithm}__null": False})
+            .group_by(algorithm)
             .having(
                 **{"length(datasets)__gt": int(len(datasets) > 1), "length(ids)__gt": 1}
             )

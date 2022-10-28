@@ -12,7 +12,7 @@ from ftm_columnstore.driver import ClickhouseDriver, get_driver
 def import_json(
     fpath: str,
     dataset: str,
-    with_fingerprints: Optional[bool] = False,
+    with_fingerprints: Optional[bool] = True,
     origin: Optional[str] = None,
     driver: Optional[ClickhouseDriver] = None,
     **kwargs

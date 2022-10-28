@@ -25,7 +25,7 @@ META_FIELDS = {
     "value",
     "fingerprint",
     "fingerprint_id",
-    "was_canonized",
+    "sflag",  # don't clash with ftm prop "flag"
     *FPX_ALGORITHMS,
     *(f"{a}_id" for a in FPX_ALGORITHMS),
 }
@@ -41,6 +41,7 @@ class Query:
         "lte": "<=",
         "in": "IN",
         "null": "IS",
+        "not": "<>",
     }
     fields = None
 
@@ -322,10 +323,10 @@ class EntityQuery(Query):
     fields = ("DISTINCT canonical_id",)
 
     def __init__(self, *args, **kwargs):
-        # default: dont include old statements replaced by canonized ones
+        # default: dont include statements with a flag set
         where_lookup = kwargs.pop("where_lookup", {})
-        was_canonized = where_lookup.pop("was_canonized", False)
-        where_lookup["was_canonized"] = was_canonized
+        flag = where_lookup.pop("sflag", "")
+        where_lookup["sflag"] = flag
         kwargs["where_lookup"] = where_lookup
         super().__init__(*args, **kwargs)
 

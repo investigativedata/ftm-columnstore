@@ -114,7 +114,7 @@ class ClickhouseDriver:
             `prop_type`               LowCardinality(String),
             `value`                   String,
             `ts`                      DateTime64,
-            `was_canonized`           Bool
+            `sflag`                   LowCardinality(String)
         ) ENGINE = ReplacingMergeTree(ts)
         PRIMARY KEY (dataset,schema,canonical_id)
         ORDER BY (dataset,schema,canonical_id,entity_id,origin,prop,value)
@@ -131,11 +131,8 @@ class ClickhouseDriver:
             `fingerprint`             String,
             `fingerprint_id`          FixedString(40),
             `soundex`                 String,
-            `soundex_id`              FixedString(40),
             `metaphone1`              String,
-            `metaphone1_id`           FixedString(40),
             `metaphone2`              String NULL,
-            `metaphone2_id`           FixedString(40) NULL,
             INDEX fp_ix (fingerprint) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
         PRIMARY KEY (fingerprint_id,schema,dataset)
@@ -159,11 +156,11 @@ class ClickhouseDriver:
                 SELECT dataset,canonical_id,schema,prop,groupUniqArray(value) as values
                 GROUP BY dataset,canonical_id,schema,prop)""",
             f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_soundex (
-                SELECT * ORDER BY soundex_id,soundex,schema,dataset)""",
+                SELECT * ORDER BY soundex,schema,dataset)""",
             f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_metaphone1 (
-                SELECT * ORDER BY metaphone1_id,metaphone1,schema,dataset)""",
+                SELECT * ORDER BY metaphone1,schema,dataset)""",
             f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_metaphone2 (
-                SELECT * ORDER BY metaphone2_id,metaphone2,schema,dataset)""",
+                SELECT * ORDER BY metaphone2,schema,dataset)""",
         )
         return (create_table, create_table_fpx, *projections)
 
