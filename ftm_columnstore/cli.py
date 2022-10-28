@@ -7,13 +7,11 @@ from typing import Iterable, Optional, Union
 import click
 from followthemoney.cli.cli import cli as main
 from followthemoney.cli.util import MAX_LINE, write_object
-from nomenklatura import Resolver
 
-from . import settings, statements
+from . import settings, statements, xref
 from .dataset import Dataset
 from .driver import get_driver
 from .nk import apply_nk
-from .xref import MATCH_COLUMNS, format_candidates, run_xref
 
 log = logging.getLogger(__name__)
 
@@ -243,12 +241,11 @@ def cli_query(obj, query, outfile):
 
 
 @cli.command("xref", help="Generate dedupe candidates")
-@click.option("-o", "--outfile", type=click.File("w"), default="-")
-@click.option("-d", "--dataset", help="Dataset(s)", required=True, multiple=True)
+@click.argument("dataset", required=False, default=None)
+@click.option("-d", "--datasets", help="Dataset(s)", multiple=True)
 @click.option("--origin")
-@click.option("-r", "--resolver", type=ResPath)
 @click.option("-a", "--auto-threshold", type=click.FLOAT, default=None)
-@click.option("-s", "--schema", help="ftm Schema", default=None)
+@click.option("-s", "--schema", help="Limit to specific ftm Schema", default=None)
 @click.option("-l", "--limit", type=click.INT, default=100_000)
 @click.option(
     "--algorithm",
@@ -256,14 +253,15 @@ def cli_query(obj, query, outfile):
     default="metaphone1",
 )
 @click.option("--scored/--unscored", is_flag=True, type=click.BOOL, default=True)
+@click.option("-o", "--outfile", type=click.File("w"), default="-")
 @click.option("--format-csv/--format-nk", is_flag=True, type=click.BOOL, default=True)
 @click.pass_obj
 def cli_xref(
     obj,
-    outfile: click.File,
-    dataset: Iterable[str],
+    dataset: Union[str | None],
+    datasets: Iterable[str],
     origin: Union[str | None],
-    resolver: Optional[Path] = None,
+    outfile: click.File,
     auto_threshold: Optional[float] = None,
     schema: Optional[str] = None,
     limit: int = 100_000,
@@ -271,33 +269,67 @@ def cli_xref(
     scored: bool = True,
     format_csv: bool = True,
 ):
-    datasets = [_get_dataset(obj, d, origin) for d in dataset]
-    left_dataset = dataset[0]
-    resolver_ = Resolver(resolver)
-    result = run_xref(
-        datasets,
-        resolver_,
-        auto_threshold=auto_threshold,
-        scored=scored,
-        schema=schema,
-        limit=limit,
-        algorithm=algorithm,
-    )
+    """
+    Perform xref in 3 possible ways:
+
+    a dataset against itself:
+        use only argument [DATASET]
+
+    a dataset against 1 or more other datasets:
+        use argument [DATASET] and 1 or more `-d <dataset>` options
+
+    datasets against each other:
+        omit argument [DATASET] and use 2 or more `-d <dataset>` options
+    """
+    if dataset is None and not datasets:
+        raise click.ClickException("Please specify at least 1 dataset")
+
+    xkwargs = {
+        "auto_threshold": auto_threshold,
+        "schema": schema,
+        "limit": limit,
+        "algorithm": algorithm,
+        "scored": scored,
+    }
+    format_kwargs = {
+        "auto_threshold": auto_threshold,
+        "left_dataset": None,
+        "min_datasets": 1,
+    }
+    datasets = [_get_dataset(obj, d, origin) for d in datasets]
+
+    if dataset is not None:
+        dataset = _get_dataset(obj, dataset, origin)
+        # we have a base dataset
+        if not len(datasets):
+            # perform dataset against itself
+            result = xref.xref_dataset(dataset, **xkwargs)
+        else:
+            # perform dataset against others
+            datasets.append(dataset)
+            format_kwargs["left_dataset"] = str(dataset)
+            format_kwargs["min_datasets"] = 2
+            result = xref.xref_datasets(datasets, dataset, **xkwargs)
+    else:
+        if not len(datasets) > 1:
+            raise click.ClickException(
+                "Specify at least 2 or more datasets via repeated `-d` arguments"
+            )
+        # perform full xref between datasets
+        format_kwargs["min_datasets"] = 2
+        result = xref.xref_datasets(datasets, **xkwargs)
 
     if format_csv:
-        writer = csv.DictWriter(outfile, fieldnames=MATCH_COLUMNS)
+        writer = csv.DictWriter(outfile, fieldnames=xref.MATCH_COLUMNS)
         writer.writeheader()
-        for row in format_candidates(
-            result,
-            auto_threshold=auto_threshold,
-            min_datasets=2,
-            left_dataset=left_dataset,
-        ):
+        for row in xref.format_candidates(result, **format_kwargs):
             writer.writerow(row)
         return
+
     # normal nk rslv format
-    for _, res in result:
-        for edge in res.edges.values():
+    for loader in result:
+        resolver = loader.resolver
+        for edge in resolver.edges.values():
             outfile.write(edge.to_line())
 
 

@@ -9,16 +9,16 @@ from followthemoney.util import make_entity_id
 from nomenklatura.dataset import Dataset as NKDataset
 from nomenklatura.entity import CE, CompositeEntity
 from nomenklatura.loader import MemoryLoader
-from nomenklatura.resolver import Resolver
 
 from .dataset import Dataset
-from .driver import ClickhouseDriver, get_driver
 from .exceptions import InvalidAlgorithm
 from .query import Query
 from .statements import FPX_ALGORITHMS
 from .util import slicer
 
 log = logging.getLogger(__name__)
+
+DEFAULT_ALGORITHM = "metaphone1"
 
 
 class ClickhouseLoader:
@@ -27,16 +27,15 @@ class ClickhouseLoader:
     def __init__(
         self,
         datasets: Iterable[Dataset],
-        resolver: Optional[Resolver[CE]] = None,
-        driver: Optional[ClickhouseDriver] = None,
+        left_dataset: Optional[Dataset] = None,
         schema: Optional[Schema] = None,
-        algorithm: Optional[str] = "metaphone1",
+        algorithm: Optional[str] = None,
     ) -> None:
-        self.driver = driver or get_driver()
         self.datasets = datasets
-        self.resolver = resolver or Resolver[CE]()
+        self.left_dataset = left_dataset
         self.schema = schema
-        self.algorithm = algorithm
+        self.algorithm = algorithm or DEFAULT_ALGORITHM
+        self.driver = datasets[0].driver
 
     @property
     def dataset(self):
@@ -48,24 +47,52 @@ class ClickhouseLoader:
             title = f"Merged: {name}"
         return NKDataset(name, title)
 
-    def get_chunks(
-        self, algorithm: Optional[str] = "metaphone1"
-    ) -> Generator[Generator[CompositeEntity, None, None], None, None]:
-        if algorithm not in FPX_ALGORITHMS:
-            raise InvalidAlgorithm(algorithm)
+    def query_distinct_fingerprints(
+        self, dataset: Dataset, algorithm: Optional[str] = None
+    ) -> Query:
+        algorithm = algorithm or self.algorithm
+        return (
+            Query(self.driver.table_fpx)
+            .select(f"DISTINCT {algorithm}")
+            .where(dataset=dataset.name)
+        )
+
+    def get_query(
+        self, algorithm: Optional[str] = None, left_dataset: Optional[Dataset] = None
+    ) -> Query:
+        algorithm = algorithm or self.algorithm
+        left_dataset = left_dataset or self.left_dataset
+
+        algorithm_lookup = {
+            f"{algorithm}__null": False,
+            f"{algorithm}__not": "",
+        }
+
         datasets = [s.name for s in self.datasets]
-        q = (
+        if left_dataset is not None and len(datasets) > 1:
+            algorithm_lookup[f"{algorithm}__in"] = self.query_distinct_fingerprints(
+                left_dataset, algorithm
+            )
+        return (
             Query(self.driver.table_fpx)
             .select(
                 f"{algorithm}, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids"
             )
-            .where(prop="name", dataset__in=datasets)
-            .where(**{f"{algorithm}__null": False})
+            .where(prop="name", dataset__in=datasets, **algorithm_lookup)
             .group_by(algorithm)
             .having(
                 **{"length(datasets)__gt": int(len(datasets) > 1), "length(ids)__gt": 1}
             )
         )
+
+    def get_chunks(
+        self, algorithm: Optional[str] = None, left_dataset: Optional[Dataset] = None
+    ) -> Generator[Generator[CompositeEntity, None, None], None, None]:
+        algorithm = algorithm or self.algorithm
+        left_dataset = left_dataset or self.left_dataset
+
+        if algorithm not in FPX_ALGORITHMS:
+            raise InvalidAlgorithm(algorithm)
 
         def _get_entities(entity_ids):
             for chunk in slicer(1_000, entity_ids):
@@ -77,13 +104,17 @@ class ClickhouseLoader:
                     )
                     yield from (CompositeEntity.from_dict(model, e) for e in entities)
 
-        for row in q:
+        for row in self.get_query(algorithm, left_dataset):
             entity_ids = row[2]
             yield _get_entities(entity_ids)
 
-    def get_loaders(self):
-        for entities in self.get_chunks(self.algorithm):
-            yield MemoryLoader(self.dataset, entities, self.resolver)
+    def get_loaders(
+        self, algorithm: Optional[str] = None, left_dataset: Optional[Dataset] = None
+    ):
+        algorithm = algorithm or self.algorithm
+        left_dataset = left_dataset or self.left_dataset
+        for entities in self.get_chunks(algorithm, left_dataset):
+            yield MemoryLoader(self.dataset, entities)
 
     def __iter__(self) -> Iterator[CE]:
         yield from self.get_loaders()
