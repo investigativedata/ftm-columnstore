@@ -12,6 +12,7 @@ from . import settings, statements, xref
 from .dataset import Dataset
 from .driver import get_driver
 from .nk import apply_nk
+from .util import clean_int
 
 log = logging.getLogger(__name__)
 
@@ -223,11 +224,13 @@ def cli_list_datasets(obj, outfile, verbose):
     q = f"SELECT distinct dataset FROM {driver.table}"
     if verbose:
         q = f"""SELECT dataset,
-        count(distinct entity_id) as entities,
-        count(*) as statements
+        count(DISTINCT canonical_id) as entities,
+        count(*) AS statements
         FROM {driver.table} GROUP BY dataset"""
     df = driver.query_dataframe(q)
-    df.to_csv(outfile, index=False)
+    df = df.set_index("dataset")
+    df.loc["__total__", :] = df.sum(numeric_only=True)
+    df.applymap(clean_int).to_csv(outfile)
 
 
 @cli.command("query", help="Execute raw query and print result (csv format) to outfile")
@@ -358,7 +361,10 @@ def cli_apply_nk(infile, outfile, auto_threshold):
 @click.pass_obj
 def cli_optimize(obj):
     driver = _get_driver(obj)
-    driver.execute(f"OPTIMIZE TABLE {driver.table} FINAL DEDUPLICATE")
+    # FIXME FINAL
+    driver.execute(
+        f"OPTIMIZE TABLE {driver.table} DEDUPLICATE BY dataset,schema,canonical_id,entity_id,origin,prop,value"
+    )
 
 
 # Register with main FtM command-line tool.

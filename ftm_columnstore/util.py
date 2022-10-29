@@ -65,6 +65,11 @@ def to_numeric(value: str):
             return to_numeric(value.replace(".", "").replace(",", "."))
 
 
+def clean_int(value: int | float) -> str:
+    # 1.0 -> 1
+    return str(int(value))
+
+
 def slicer(n: int, iterable: Iterable):
     it = iter(iterable)
     while True:
