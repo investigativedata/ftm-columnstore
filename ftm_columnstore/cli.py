@@ -258,6 +258,13 @@ def cli_query(obj, query, outfile):
 @click.option("--scored/--unscored", is_flag=True, type=click.BOOL, default=True)
 @click.option("-o", "--outfile", type=click.File("w"), default="-")
 @click.option("--format-csv/--format-nk", is_flag=True, type=click.BOOL, default=True)
+@click.option(
+    "--entities",
+    is_flag=True,
+    type=click.BOOL,
+    default=False,
+    help="Get candidate entities instead of xref score result",
+)
 @click.pass_obj
 def cli_xref(
     obj,
@@ -271,6 +278,7 @@ def cli_xref(
     algorithm: str = "metaphone1",
     scored: bool = True,
     format_csv: bool = True,
+    entities: bool = False,
 ):
     """
     Perform xref in 3 possible ways:
@@ -322,10 +330,14 @@ def cli_xref(
         format_kwargs["min_datasets"] = 2
         result = xref.xref_datasets(datasets, **xkwargs)
 
+    if entities:
+        for entity in xref.get_candidates(result, as_entities=True, **format_kwargs):
+            outfile.write(json.dumps(entity.to_dict()) + "\n")
+
     if format_csv:
         writer = csv.DictWriter(outfile, fieldnames=xref.MATCH_COLUMNS)
         writer.writeheader()
-        for row in xref.format_candidates(result, **format_kwargs):
+        for row in xref.get_candidates(result, **format_kwargs):
             writer.writerow(row)
         return
 

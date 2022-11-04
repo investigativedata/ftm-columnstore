@@ -29,7 +29,7 @@ setup(
         "Click",
         "clickhouse-driver[numpy]",
         "followthemoney",
-        "nomenklatura",
+        "nomenklatura @ git+https://github.com/simonwoerpel/nomenklatura.git@ftmcstore-adjustments",
         "pandas",
         "pyicu",
         "structlog",

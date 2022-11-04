@@ -71,12 +71,13 @@ def xref_datasets(
     yield from run_xref(loader, **kwargs)
 
 
-def format_candidates(
+def get_candidates(
     result: Generator[MemoryLoader, None, None],
+    as_entities: Optional[bool] = False,
     auto_threshold: Optional[float] = None,
     min_datasets: Optional[int] = 1,
     left_dataset: Optional[str] = None,
-) -> Generator[Match, None, None]:
+) -> Generator[Match | CE, None, None]:
     auto_threshold = auto_threshold or 0
 
     def _order(left: CE, right: CE) -> Tuple[CE, CE]:
@@ -94,19 +95,23 @@ def format_candidates(
                 if left and right:
                     if len(left.datasets | right.datasets) >= min_datasets:
                         if left and right:
-                            left, right = _order(left, right)
-                            row: Match = {
-                                "left_id": left.id,
-                                "left_caption": left.caption,
-                                "left_schema": left.schema.name,
-                                "left_countries": ";".join(left.countries),
-                                "left_datasets": ";".join(left.datasets),
-                                "right_id": right.id,
-                                "right_caption": right.caption,
-                                "right_schema": right.schema.name,
-                                "right_countries": ";".join(right.countries),
-                                "right_datasets": ";".join(right.datasets),
-                                "judgement": edge.judgement.value,
-                                "score": edge.score,
-                            }
-                            yield row
+                            if as_entities:
+                                yield left
+                                yield right
+                            else:
+                                left, right = _order(left, right)
+                                row: Match = {
+                                    "left_id": left.id,
+                                    "left_caption": left.caption,
+                                    "left_schema": left.schema.name,
+                                    "left_countries": ";".join(left.countries),
+                                    "left_datasets": ";".join(left.datasets),
+                                    "right_id": right.id,
+                                    "right_caption": right.caption,
+                                    "right_schema": right.schema.name,
+                                    "right_countries": ";".join(right.countries),
+                                    "right_datasets": ";".join(right.datasets),
+                                    "judgement": edge.judgement.value,
+                                    "score": edge.score,
+                                }
+                                yield row
