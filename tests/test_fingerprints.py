@@ -6,13 +6,15 @@ from ftm_columnstore.dataset import Dataset
 class DatasetTestCase(ClickhouseTestCase):
     def test_fingerprints(self):
         # find similar soundex
-        q = """SELECT entity_id FROM ftm_columnstore_test_fpx WHERE soundex IN (
-            SELECT soundex FROM (
+        q = """SELECT entity_id FROM ftm_columnstore_test_fpx
+            WHERE algorithm = 'soundex' AND value IN (
+            SELECT value FROM (
                 SELECT
                     count(DISTINCT entity_id) AS entities,
-                    soundex
+                    value
                 FROM ftm_columnstore_test_fpx
-                GROUP BY soundex
+                WHERE algorithm = 'soundex'
+                GROUP BY value
                 HAVING entities > 2
             ))"""
         ds = Dataset("luanda_leaks")

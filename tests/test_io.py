@@ -13,4 +13,9 @@ class IOTestCase(ClickhouseTestCase):
             f"SELECT count(*) FROM {self.driver.table_fpx} WHERE dataset = 'luanda_leaks'"
         )
         count = count[0][0]
-        self.assertEqual(count, 426)
+        self.assertEqual(count, 2130)
+        count = self.driver.execute(
+            f"SELECT count(*) FROM {self.driver.view_fpx_schemas}"
+        )
+        count = count[0][0]
+        self.assertEqual(count, 1853)

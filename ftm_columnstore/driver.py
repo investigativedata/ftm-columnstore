@@ -23,6 +23,8 @@ class ClickhouseDriver:
     ):
         self.table = table
         self.table_fpx = f"{table}_fpx"
+        self.table_xref = f"{table}_xref"
+        self.view_fpx_schemas = f"{table}_fpx_schemas"
         self.uri = uri
         self.ensure_table()
 
@@ -40,7 +42,10 @@ class ClickhouseDriver:
                 self.execute(stmt)
             except Exception as e:
                 if exists_ok and (
-                    table_exists(e, self.table) or table_exists(e, self.table_fpx)
+                    table_exists(e, self.table)
+                    or table_exists(e, self.table_fpx)  # noqa
+                    or table_exists(e, self.table_xref)  # noqa
+                    or table_exists(e, self.view_fpx_schemas)  # noqa
                 ):
                     pass
                 else:
@@ -54,7 +59,12 @@ class ClickhouseDriver:
         try:
             self.init(recreate=False)
         except errors.ServerException as e:
-            if table_exists(e, self.table) or table_exists(e, self.table_fpx):
+            if (
+                table_exists(e, self.table)
+                or table_exists(e, self.table_fpx)  # noqa
+                or table_exists(e, self.table_xref)  # noqa
+                or table_exists(e, self.view_fpx_schemas)  # noqa
+            ):
                 pass
             else:
                 raise e
@@ -123,20 +133,48 @@ class ClickhouseDriver:
         create_table_fpx = f"""
         CREATE TABLE {self.table_fpx}
         (
-            `id`                      FixedString(40),
             `dataset`                 LowCardinality(String),
             `entity_id`               String,
             `schema`                  LowCardinality(String),
             `prop`                    LowCardinality(String),
-            `fingerprint`             String,
-            `fingerprint_id`          FixedString(40),
-            `soundex`                 String,
-            `metaphone1`              String,
-            `metaphone2`              String NULL,
-            INDEX fp_ix (fingerprint) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
+            `algorithm`               LowCardinality(String),
+            `value`                   String
         ) ENGINE = ReplacingMergeTree()
-        PRIMARY KEY (fingerprint_id,schema,dataset)
-        ORDER BY (fingerprint_id,schema,dataset)
+        PRIMARY KEY (algorithm,value,prop,schema,dataset)
+        ORDER BY (algorithm,value,prop,schema,dataset,entity_id)
+        """
+
+        create_table_xref = f"""
+        CREATE TABLE {self.table_xref}
+        (
+            `left_dataset`            String,
+            `left_id`                 String,
+            `left_schema`             LowCardinality(String),
+            `left_country`            LowCardinality(String),
+            `left_caption`            String,
+            `right_dataset`           String,
+            `right_id`                String,
+            `right_schema`            LowCardinality(String),
+            `right_country`           LowCardinality(String),
+            `right_caption`           String,
+            `judgement`               LowCardinality(String),
+            `score`                   Decimal32(8),
+            `ts`                      DateTime64,
+        ) ENGINE = ReplacingMergeTree(ts)
+        PRIMARY KEY (left_dataset,left_schema)
+        ORDER BY (left_dataset,left_schema,left_id,right_dataset,right_schema,right_id)
+        """
+
+        create_view_fpx_schemas = f"""
+        CREATE MATERIALIZED VIEW {self.view_fpx_schemas}
+        ENGINE = AggregatingMergeTree() ORDER BY (algorithm, value, schema)
+        AS SELECT
+            algorithm,
+            value,
+            schema,
+            count(schema) AS schema_count
+        FROM {self.table_fpx}
+        GROUP BY algorithm, value, schema
         """
 
         projections = (
@@ -155,20 +193,26 @@ class ClickhouseDriver:
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_entities (
                 SELECT dataset,canonical_id,schema,prop,groupUniqArray(value) as values
                 GROUP BY dataset,canonical_id,schema,prop)""",
-            f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_soundex (
-                SELECT * ORDER BY soundex,schema,dataset)""",
-            f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_metaphone1 (
-                SELECT * ORDER BY metaphone1,schema,dataset)""",
-            f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_metaphone2 (
-                SELECT * ORDER BY metaphone2,schema,dataset)""",
+            f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_value (
+                SELECT * ORDER BY value,schema,dataset)""",
+            f"""ALTER TABLE {self.table_xref} ADD PROJECTION {self.table_xref}_reverse (
+                SELECT * ORDER BY right_dataset,right_schema,right_id,left_dataset,left_schema,left_id)""",
         )
-        return (create_table, create_table_fpx, *projections)
+        return (
+            create_table,
+            create_table_fpx,
+            create_table_xref,
+            create_view_fpx_schemas,
+            *projections,
+        )
 
     @property
     def drop_statements(self) -> str:
         return (
             f"DROP TABLE IF EXISTS {self.table}",
             f"DROP TABLE IF EXISTS {self.table_fpx}",
+            f"DROP TABLE IF EXISTS {self.table_xref}",
+            f"DROP VIEW IF EXISTS {self.view_fpx_schemas}",
         )
 
 

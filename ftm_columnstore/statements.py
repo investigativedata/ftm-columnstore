@@ -36,18 +36,14 @@ class Statement(TypedDict):
 
 
 class Fingerprints(TypedDict):
-    fingerprint: str
-    fingerprint_id: str
-    soundex: str
-    metaphone1: str
-    metaphone2: Optional[str] = None
+    algorithm: str
+    value: str
 
 
 class FingerprintStatement(Fingerprints):
     """A statement describing fingerprints and phonetic algorithms for an
     entity, useful for matching"""
 
-    id: str
     dataset: str
     entity_id: str
     schema: str
@@ -56,17 +52,23 @@ class FingerprintStatement(Fingerprints):
 @lru_cache(1_000_000)
 def fingerprint(value: str) -> Fingerprints:
     fingerprint = fingerprints.generate(value)
+    fingerprint_id = make_entity_id(fingerprint)
     soundex = SX.soundex(value)
     metaphone1, metaphone2 = doublemetaphone(value)
-    metaphone2 = metaphone2 or None
-    fp: Fingerprints = {
-        "fingerprint": fingerprint,
-        "fingerprint_id": make_entity_id(fingerprint),
-        "soundex": soundex,
-        "metaphone1": metaphone1,
-        "metaphone2": metaphone2,
+    metaphone2 = metaphone2 or ""
+    fingerprint_id = make_entity_id(fingerprint)
+    fingerprint: Fingerprints = {
+        "algorithm": "fingerprint",
+        "value": fingerprint,
     }
-    return fp
+    fingerprint_id: Fingerprints = {
+        "algorithm": "fingerprint_id",
+        "value": fingerprint_id,
+    }
+    soundex: Fingerprints = {"algorithm": "soundex", "value": soundex}
+    metaphone1: Fingerprints = {"algorithm": "metaphone1", "value": metaphone1}
+    metaphone2: Fingerprints = {"algorithm": "metaphone2", "value": metaphone2}
+    return [fingerprint, fingerprint_id, soundex, metaphone1, metaphone2]
 
 
 def stmt_key(
@@ -150,20 +152,26 @@ def fingerprints_from_entity(
     for prop, value in entity.itervalues():
         if value:
             if prop.type.name == "name":
-                fingerprints: Fingerprints = fingerprint(value)
-                stmt: FingerprintStatement = {
-                    **{
-                        "id": stmt_key(dataset, entity_id, prop.name, value),
-                        "dataset": dataset,
-                        "entity_id": entity_id,
-                        "schema": entity.schema.name,
-                        "prop": prop.name,
-                    },
-                    **fingerprints,
-                }
-                yield stmt
+                fingerprints: [Fingerprints] = fingerprint(value)
+                for fp in fingerprints:
+                    stmt: FingerprintStatement = {
+                        **{
+                            "dataset": dataset,
+                            "entity_id": entity_id,
+                            "schema": entity.schema.name,
+                            "prop": prop.name,
+                        },
+                        **fp,
+                    }
+                    yield stmt
 
 
 COLUMNS = tuple(Statement.__annotations__.keys())
 COLUMNS_FPX = tuple(FingerprintStatement.__annotations__.keys())
-FPX_ALGORITHMS = ("soundex", "metaphone1", "metaphone2")
+FPX_ALGORITHMS = (
+    "fingerprint",
+    "fingerprint_id",
+    "soundex",
+    "metaphone1",
+    "metaphone2",
+)

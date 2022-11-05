@@ -9,7 +9,6 @@ from followthemoney.proxy import E
 from . import enums
 from .driver import ClickhouseDriver, get_driver
 from .exceptions import InvalidQuery
-from .statements import FPX_ALGORITHMS
 
 TYPES = {p.name: p.type.name for p in model.properties}
 
@@ -26,8 +25,7 @@ META_FIELDS = {
     "fingerprint",
     "fingerprint_id",
     "sflag",  # don't clash with ftm prop "flag"
-    *FPX_ALGORITHMS,
-    *(f"{a}_id" for a in FPX_ALGORITHMS),
+    "algorithm",
 }
 
 

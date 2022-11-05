@@ -13,7 +13,7 @@ class XrefTestCase(ClickhouseTestCase):
         query = loader.get_query()
         self.assertEqual(
             str(query),
-            "SELECT metaphone1, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE dataset IN ('luanda_leaks') AND metaphone1 <> '' AND metaphone1 IS NOT NULL AND prop = 'name' GROUP BY metaphone1 HAVING length(datasets) > '0' AND length(ids) > '1'",
+            "SELECT value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset IN ('luanda_leaks') AND prop = 'name' AND value <> '' GROUP BY value HAVING length(datasets) > '0' AND length(ids) > '1'",
         )
         blocks = [x for x in query]
         self.assertEqual(len(blocks), 3)
@@ -32,7 +32,7 @@ class XrefTestCase(ClickhouseTestCase):
         query = loader.get_query()
         self.assertEqual(
             str(query),
-            "SELECT metaphone1, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE dataset IN ('luanda_leaks', 'empty_dataset') AND metaphone1 <> '' AND metaphone1 IN (SELECT DISTINCT metaphone1 FROM ftm_columnstore_test_fpx WHERE dataset = 'luanda_leaks') AND metaphone1 IS NOT NULL AND prop = 'name' GROUP BY metaphone1 HAVING length(datasets) > '1' AND length(ids) > '1'",
+            "SELECT value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset IN ('luanda_leaks', 'empty_dataset') AND prop = 'name' AND value <> '' AND value IN (SELECT DISTINCT value FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset = 'luanda_leaks') GROUP BY value HAVING length(datasets) > '1' AND length(ids) > '1'",
         )
         self.assertRaises(
             StopIteration,
@@ -45,7 +45,7 @@ class XrefTestCase(ClickhouseTestCase):
         query = loader.get_query()
         self.assertEqual(
             str(query),
-            "SELECT metaphone1, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE dataset IN ('luanda_leaks', 'empty_dataset', 'empty_dataset2') AND metaphone1 <> '' AND metaphone1 IS NOT NULL AND prop = 'name' GROUP BY metaphone1 HAVING length(datasets) > '1' AND length(ids) > '1'",
+            "SELECT value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset IN ('luanda_leaks', 'empty_dataset', 'empty_dataset2') AND prop = 'name' AND value <> '' GROUP BY value HAVING length(datasets) > '1' AND length(ids) > '1'",
         )
         self.assertRaises(
             StopIteration, lambda: next(xref.xref_datasets([left_dataset, ds, ds2]))

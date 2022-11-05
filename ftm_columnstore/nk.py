@@ -53,8 +53,8 @@ class ClickhouseLoader:
         algorithm = algorithm or self.algorithm
         return (
             Query(self.driver.table_fpx)
-            .select(f"DISTINCT {algorithm}")
-            .where(dataset=dataset.name)
+            .select("DISTINCT value")
+            .where(dataset=dataset.name, algorithm=algorithm)
         )
 
     def get_query(
@@ -63,23 +63,20 @@ class ClickhouseLoader:
         algorithm = algorithm or self.algorithm
         left_dataset = left_dataset or self.left_dataset
 
-        algorithm_lookup = {
-            f"{algorithm}__null": False,
-            f"{algorithm}__not": "",
-        }
+        algorithm_lookup = {"algorithm": algorithm, "value__not": ""}
 
         datasets = [s.name for s in self.datasets]
         if left_dataset is not None and len(datasets) > 1:
-            algorithm_lookup[f"{algorithm}__in"] = self.query_distinct_fingerprints(
+            algorithm_lookup["value__in"] = self.query_distinct_fingerprints(
                 left_dataset, algorithm
             )
         return (
             Query(self.driver.table_fpx)
             .select(
-                f"{algorithm}, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids"
+                "value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids"
             )
             .where(prop="name", dataset__in=datasets, **algorithm_lookup)
-            .group_by(algorithm)
+            .group_by("value")
             .having(
                 **{"length(datasets)__gt": int(len(datasets) > 1), "length(ids)__gt": 1}
             )
