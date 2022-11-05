@@ -154,16 +154,17 @@ def fingerprints_from_entity(
             if prop.type.name == "name":
                 fingerprints: [Fingerprints] = fingerprint(value)
                 for fp in fingerprints:
-                    stmt: FingerprintStatement = {
-                        **{
-                            "dataset": dataset,
-                            "entity_id": entity_id,
-                            "schema": entity.schema.name,
-                            "prop": prop.name,
-                        },
-                        **fp,
-                    }
-                    yield stmt
+                    if fp["value"]:
+                        stmt: FingerprintStatement = {
+                            **{
+                                "dataset": dataset,
+                                "entity_id": entity_id,
+                                "schema": entity.schema.name,
+                                "prop": prop.name,
+                            },
+                            **fp,
+                        }
+                        yield stmt
 
 
 COLUMNS = tuple(Statement.__annotations__.keys())
