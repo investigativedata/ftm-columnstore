@@ -333,6 +333,7 @@ def cli_xref(
     if entities:
         for entity in xref.get_candidates(result, as_entities=True, **format_kwargs):
             outfile.write(json.dumps(entity.to_dict()) + "\n")
+        return
 
     if format_csv:
         writer = csv.DictWriter(outfile, fieldnames=xref.MATCH_COLUMNS)
