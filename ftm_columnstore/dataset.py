@@ -101,17 +101,21 @@ class Dataset:
         self.EQ = EntityQuery(driver=driver).where(dataset=name, origin=origin)
         self.FPQ = Query(driver=driver, from_=self.driver.table_fpx).where(dataset=name)
 
-    def drop(self):
+    def drop(self, sync: Optional[bool] = False):
         log.info("Dropping ftm-store: %s" % self.name)
         where = self.Q.where_part
-        stmt = f"DELETE FROM {self.driver.table} {where}"
-        return self._execute(stmt)
+        stmt = f"ALTER TABLE {self.driver.table} DELETE {where}"
+        res = self._execute(stmt)
+        if sync:
+            self.driver.sync()
+        return res
 
     def delete(
         self,
         canonical_id: Optional[str] = None,
         entity_id: Optional[str] = None,
         origin: Optional[str] = None,
+        sync: Optional[bool] = False,
     ):
         q = self.Q
         filtered = False
@@ -125,9 +129,15 @@ class Dataset:
             filtered = True
             q = q.where(origin=origin)
         if filtered:
-            stmt = f"DELETE FROM {self.driver.table} {q.where_part}"
-            return self._execute(stmt)
-        return self.drop()
+            stmt = f"ALTER TABLE {self.driver.table} DELETE {q.where_part}"
+            res = self._execute(stmt)
+            if sync:
+                self.driver.sync()
+            return res
+        res = self.drop()
+        if sync:
+            self.driver.sync()
+        return res
 
     def put(
         self,
@@ -239,7 +249,7 @@ class Dataset:
         if sync:
             # make sure dedupe happens in sync
             bulk.flush()
-            self.driver.execute(f"OPTIMIZE TABLE {self.driver.table} FINAL DEDUPLICATE")
+            self.driver.sync()
 
     def expand(self, entity: E, levels: Optional[int] = 1) -> Iterator[E]:
         """

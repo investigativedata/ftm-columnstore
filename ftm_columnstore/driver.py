@@ -109,6 +109,9 @@ class ClickhouseDriver:
     def execute_iter(self, *args, **kwargs):
         return self.query(*args, **kwargs)
 
+    def sync(self):  # not guaranteed by clickhouse
+        self.execute(f"OPTIMIZE TABLE {self.table} FINAL DEDUPLICATE")
+
     @property
     def create_statements(self) -> Iterable[str]:
         create_table = f"""
