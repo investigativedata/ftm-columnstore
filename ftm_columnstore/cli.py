@@ -36,7 +36,7 @@ def _get_dataset(
     name: str,
     origin: Optional[str] = None,
     ignore_errors: Optional[bool] = False,
-):
+) -> Dataset:
     driver = _get_driver(obj)
     return Dataset(name, origin=origin, driver=driver, ignore_errors=ignore_errors)
 

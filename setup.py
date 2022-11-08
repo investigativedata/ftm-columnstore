@@ -24,6 +24,7 @@ setup(
     ],
     packages=find_packages(),
     package_dir={"ftm_columnstore": "ftm_columnstore"},
+    package_data={"ftm_columnstore": ["py.typed"]},
     install_requires=[
         "banal",
         "Click",

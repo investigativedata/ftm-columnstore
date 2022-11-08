@@ -2,9 +2,10 @@ all: clean install test
 
 install:
 	pip install -e .
-	pip install twine coverage nose moto pytest pytest-cov black flake8 isort bump2version
+	pip install twine coverage nose moto pytest pytest-cov black flake8 isort bump2version mypy
 
 test:
+	mypy ftm_columnstore/cli.py
 	pytest -s --cov=ftm_columnstore --cov-report term-missing
 
 build:
