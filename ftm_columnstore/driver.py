@@ -25,6 +25,7 @@ class ClickhouseDriver:
         self.table_fpx = f"{table}_fpx"
         self.table_xref = f"{table}_xref"
         self.view_fpx_schemas = f"{table}_fpx_schemas"
+        self.view_stats = f"{table}_stats"
         self.uri = uri
         self.ensure_table()
 
@@ -46,6 +47,7 @@ class ClickhouseDriver:
                     or table_exists(e, self.table_fpx)  # noqa
                     or table_exists(e, self.table_xref)  # noqa
                     or table_exists(e, self.view_fpx_schemas)  # noqa
+                    or table_exists(e, self.view_stats)  # noqa
                 ):
                     pass
                 else:
@@ -64,6 +66,7 @@ class ClickhouseDriver:
                 or table_exists(e, self.table_fpx)  # noqa
                 or table_exists(e, self.table_xref)  # noqa
                 or table_exists(e, self.view_fpx_schemas)  # noqa
+                or table_exists(e, self.view_stats)  # noqa
             ):
                 pass
             else:
@@ -180,6 +183,18 @@ class ClickhouseDriver:
         GROUP BY algorithm, value, schema
         """
 
+        create_view_stats = f"""
+        CREATE MATERIALIZED VIEW {self.view_stats}
+        ENGINE = AggregatingMergeTree() ORDER BY (dataset, schema)
+        AS SELECT
+            dataset,
+            schema,
+            count(distinct canonical_id) AS entities,
+            count(*) AS statements
+        FROM {self.table}
+        GROUP BY dataset, schema
+        """
+
         projections = (
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_values (
                 SELECT * ORDER BY value,prop)""",
@@ -206,6 +221,7 @@ class ClickhouseDriver:
             create_table_fpx,
             create_table_xref,
             create_view_fpx_schemas,
+            create_view_stats,
             *projections,
         )
 
@@ -216,6 +232,7 @@ class ClickhouseDriver:
             f"DROP TABLE IF EXISTS {self.table_fpx}",
             f"DROP TABLE IF EXISTS {self.table_xref}",
             f"DROP VIEW IF EXISTS {self.view_fpx_schemas}",
+            f"DROP VIEW IF EXISTS {self.view_stats}",
         )
 
 

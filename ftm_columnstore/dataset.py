@@ -59,7 +59,7 @@ class BulkWriter:
 
 class EntityBulkWriter(BulkWriter):
     def __init__(self, *args, **kwargs):
-        self.with_fingerprints = kwargs.pop("with_fingerprints", False)
+        self.with_fingerprints = kwargs.pop("with_fingerprints", True)
         super().__init__(*args, **kwargs)
         if self.with_fingerprints:
             # FIXME this is a bit hacky, having sub writers instances...
@@ -143,7 +143,7 @@ class Dataset:
         self,
         entity: E,
         origin: Optional[str] = None,
-        with_fingerprints: Optional[bool] = False,
+        with_fingerprints: Optional[bool] = True,
     ):
         bulk = self.bulk(
             origin=origin or self.origin, with_fingerprints=with_fingerprints
@@ -152,7 +152,7 @@ class Dataset:
         return bulk.flush()
 
     def bulk(
-        self, origin: Optional[str] = None, with_fingerprints: Optional[bool] = False
+        self, origin: Optional[str] = None, with_fingerprints: Optional[bool] = True
     ) -> "EntityBulkWriter":
         return EntityBulkWriter(
             self,

@@ -85,8 +85,9 @@ def stmt_key(
 
 
 @lru_cache(100_000)
-def _denamespace(value: str) -> str:
+def _denamespace(value: str | int) -> str:
     # de-namespacing? #FIXME
+    value = str(value)
     return value.rsplit(".", 1)[0]
 
 
@@ -148,7 +149,7 @@ def fingerprints_from_entity(
     entity = model.get_proxy(entity)
     if not _should_fingerprint(entity):
         return []
-    entity_id = entity.id.rsplit(".", 1)[0]
+    entity_id = _denamespace(entity.id)
     for prop, value in entity.itervalues():
         if value:
             if prop.type.name == "name":

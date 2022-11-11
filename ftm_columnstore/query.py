@@ -104,7 +104,7 @@ class Query:
         query = query or self.get_query()
         return self.driver.query(str(query))
 
-    def first(self):
+    def first(self) -> E:
         # return the first object
         for res in self:
             return res
