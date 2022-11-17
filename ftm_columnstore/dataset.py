@@ -172,6 +172,7 @@ class Dataset:
         origin: Optional[str] = None,
         chunksize: Optional[int] = 1000,
         schema: Optional[List[str]] = None,
+        limit: Optional[int] = None,
     ) -> Iterator[E]:
         q = self.EQ
         if canonical_id is not None:
@@ -182,6 +183,8 @@ class Dataset:
             q = q.where(origin=origin)
         if schema is not None:
             q = q.where(schema__in=schema)
+        if limit is not None:
+            q = q[:limit]
         return q.iterate(chunksize=chunksize)
 
     def statements(self, origin: Optional[str] = None) -> Iterator[tuple]:

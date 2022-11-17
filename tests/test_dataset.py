@@ -18,6 +18,16 @@ class DatasetTestCase(ClickhouseTestCase):
         self.assertEqual(len(entities), 852)
         entities = [e for e in ds.iterate(chunksize=500)]
         self.assertEqual(len(entities), 852)
+        entities = [e for e in ds.iterate(limit=100, chunksize=500)]
+        self.assertEqual(len(entities), 100)
+        entities = [e for e in ds.iterate(limit=1000, chunksize=500)]
+        self.assertEqual(len(entities), 852)
+        entities = [e for e in ds.iterate(limit=100, chunksize=50)]
+        self.assertEqual(len(entities), 100)
+        entities = [e for e in ds.iterate(limit=101, chunksize=50)]
+        self.assertEqual(len(entities), 101)
+        entities = [e for e in ds.iterate(limit=101, chunksize=99)]
+        self.assertEqual(len(entities), 101)
 
     def test_dataset_statements_iteration(self):
         ds = Dataset("luanda_leaks")

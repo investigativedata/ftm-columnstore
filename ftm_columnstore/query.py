@@ -408,8 +408,18 @@ class EntityQuery(Query):
     def iterate(self, chunksize: Optional[int] = 1000) -> Iterator[E]:
         # iterate in chunks, useful for huge bulk streaming performance
         q = self
-        for i in itertools.count(0, chunksize):
-            chunk = (x for x in q[i : i + chunksize])
+        if q.limit is not None:
+            if q.limit < chunksize:
+                yield from (x for x in q)
+                return
+
+        for start in itertools.count(0, chunksize):
+            end = start + chunksize
+            if q.limit is not None:
+                if start >= q.limit:
+                    return
+                end = min([end, q.limit])
+            chunk = (x for x in q[start:end])
             try:
                 # maybe chunk is empty, then abort
                 entity = next(chunk)
