@@ -12,6 +12,7 @@ from . import settings, statements, xref
 from .dataset import Dataset
 from .driver import get_driver
 from .nk import apply_nk
+from .predict import get_sample_data
 from .util import clean_int
 
 log = logging.getLogger(__name__)
@@ -380,6 +381,29 @@ def cli_optimize(obj):
     driver.execute(
         f"OPTIMIZE TABLE {driver.table} DEDUPLICATE BY dataset,schema,canonical_id,entity_id,origin,prop,value"
     )
+
+
+@cli.group()
+def predict():
+    pass
+
+
+@predict.command("create-training-data")
+@click.option("-o", "--outfile", type=click.File("w"), default="-")
+@click.option(
+    "-l",
+    "--limit",
+    default=1_000_000,
+    type=click.INT,
+    help="Number of sample entities per schema",
+    show_default=True,
+)
+@click.option("-d", "--datasets", help="Dataset(s)", multiple=True)
+def predict_create_training_data(
+    outfile, limit, datasets: Optional[Iterable[str]] = None
+):
+    for schema, label in get_sample_data(limit, datasets):
+        outfile.write(f"__label__{schema.lower()} {label}\n")
 
 
 # Register with main FtM command-line tool.
