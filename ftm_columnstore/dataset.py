@@ -181,7 +181,7 @@ class Dataset:
             q = q.where(entity_id=entity_id)
         if origin is not None:
             q = q.where(origin=origin)
-        if schema is not None:
+        if schema is not None and len(schema):
             q = q.where(schema__in=schema)
         if limit is not None:
             q = q[:limit]
