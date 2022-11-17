@@ -168,10 +168,11 @@ def cli_write(obj, infile, dataset, origin, fingerprints, ignore_errors):
 @click.option("-d", "--dataset", help="Dataset")
 @click.option("--origin")
 @click.option("-o", "--outfile", type=click.File("w"), default="-")
+@click.option("-s", "--schema", multiple=True, help="Schema(s)")
 @click.pass_obj
-def cli_iterate(obj, dataset, origin, outfile):
+def cli_iterate(obj, dataset, origin, outfile, schema):
     dataset = _get_dataset(obj, dataset, origin)
-    for entity in dataset.iterate():
+    for entity in dataset.iterate(origin=origin, schema=schema):
         write_object(outfile, entity)
 
 

@@ -1,6 +1,6 @@
 import logging
 from functools import cached_property, lru_cache
-from typing import Iterator, Optional, Union
+from typing import Iterator, List, Optional, Union
 
 import pandas as pd
 from followthemoney.proxy import E
@@ -171,6 +171,7 @@ class Dataset:
         entity_id: Optional[str] = None,
         origin: Optional[str] = None,
         chunksize: Optional[int] = 1000,
+        schema: Optional[List[str]] = None,
     ) -> Iterator[E]:
         q = self.EQ
         if canonical_id is not None:
@@ -179,6 +180,8 @@ class Dataset:
             q = q.where(entity_id=entity_id)
         if origin is not None:
             q = q.where(origin=origin)
+        if schema is not None:
+            q = q.where(schema__in=schema)
         return q.iterate(chunksize=chunksize)
 
     def statements(self, origin: Optional[str] = None) -> Iterator[tuple]:
