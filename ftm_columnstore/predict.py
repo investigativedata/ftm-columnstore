@@ -5,7 +5,6 @@ import click
 from followthemoney import model
 from followthemoney.proxy import EntityProxy
 from followthemoney_typepredict.sampler import FastTextSampler
-from followthemoney_typepredict.transform import DEFAULT_SKIP_SCHEMAS
 
 from .query import EntityQuery
 
@@ -28,13 +27,9 @@ class Sampler(FastTextSampler):
         super().close()
 
 
-def transform_proxy(proxy: EntityProxy, fields, skip_schemas=DEFAULT_SKIP_SCHEMAS):
-    if any(proxy.schema.is_a(s) for s in skip_schemas):
-        return
-    for field in fields:
-        if field == proxy.schema.name:
-            data = proxy.names
-            yield from ((field, value) for value in data)
+def transform_proxy(proxy: EntityProxy, fields):
+    if proxy.schema.name in SCHEMAS:
+        yield from ((proxy.schema.name, value) for value in proxy.names)
 
 
 def get_sampler(output_dir: click.Path) -> Sampler:
