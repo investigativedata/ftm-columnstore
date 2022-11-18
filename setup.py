@@ -30,6 +30,7 @@ setup(
         "Click",
         "clickhouse-driver[numpy]",
         "followthemoney",
+        "followthemoney_typepredict @ git+https://github.com/alephdata/followthemoney-typepredict.git",
         "nomenklatura @ git+https://github.com/simonwoerpel/nomenklatura.git@ftmcstore-adjustments",
         "pandas",
         "pyicu",

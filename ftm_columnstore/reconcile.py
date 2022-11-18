@@ -18,7 +18,7 @@ def guess_schema(
     if algorithm != DEFAULT_ALGORITHM:
         raise InvalidAlgorithm(algorithm)
     driver = driver or get_driver()
-    fingerprints = [fp(n) for n in entity.get("name")]
+    fingerprints = [fp(n) for n in entity.names]
     q = Query(driver.view_fpx_schemas).where(
         algorithm=algorithm, value__in=fingerprints
     )

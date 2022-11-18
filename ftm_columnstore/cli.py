@@ -8,11 +8,10 @@ import click
 from followthemoney.cli.cli import cli as main
 from followthemoney.cli.util import MAX_LINE, write_object
 
-from . import settings, statements, xref
+from . import predict, settings, statements, xref
 from .dataset import Dataset
 from .driver import get_driver
 from .nk import apply_nk
-from .predict import get_sample_data
 from .util import clean_int
 
 log = logging.getLogger(__name__)
@@ -383,13 +382,13 @@ def cli_optimize(obj):
     )
 
 
-@cli.group()
-def predict():
+@cli.group("predict")
+def cli_predict():
     pass
 
 
-@predict.command("create-training-data")
-@click.option("-o", "--outfile", type=click.File("w"), default="-")
+@cli_predict.command("create-training-data")
+@click.argument("output-dir", type=click.Path(file_okay=False, writable=True))
 @click.option(
     "-l",
     "--limit",
@@ -400,10 +399,11 @@ def predict():
 )
 @click.option("-d", "--datasets", help="Dataset(s)", multiple=True)
 def predict_create_training_data(
-    outfile, limit, datasets: Optional[Iterable[str]] = None
+    output_dir, limit, datasets: Optional[Iterable[str]] = None
 ):
-    for schema, label in get_sample_data(limit, datasets):
-        outfile.write(f"__label__{schema.lower()} {label}\n")
+    with predict.get_sampler(output_dir) as sampler:
+        for proxy in predict.get_sample_entities(limit, datasets):
+            sampler.add_entity(proxy)
 
 
 # Register with main FtM command-line tool.
