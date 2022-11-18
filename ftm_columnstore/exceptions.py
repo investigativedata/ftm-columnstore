@@ -4,3 +4,11 @@ class ImproperlyConfigured(Exception):
 
 class InvalidQuery(Exception):
     pass
+
+
+class EntityNotFound(Exception):
+    pass
+
+
+class InvalidAlgorithm(Exception):
+    pass

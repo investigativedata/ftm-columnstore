@@ -1,6 +1,8 @@
 from tests.util import ClickhouseTestCase
 
 from ftm_columnstore.dataset import Dataset
+from ftm_columnstore.exceptions import EntityNotFound
+from ftm_columnstore.io import import_json
 
 
 class DatasetTestCase(ClickhouseTestCase):
@@ -16,6 +18,16 @@ class DatasetTestCase(ClickhouseTestCase):
         self.assertEqual(len(entities), 852)
         entities = [e for e in ds.iterate(chunksize=500)]
         self.assertEqual(len(entities), 852)
+        entities = [e for e in ds.iterate(limit=100, chunksize=500)]
+        self.assertEqual(len(entities), 100)
+        entities = [e for e in ds.iterate(limit=1000, chunksize=500)]
+        self.assertEqual(len(entities), 852)
+        entities = [e for e in ds.iterate(limit=100, chunksize=50)]
+        self.assertEqual(len(entities), 100)
+        entities = [e for e in ds.iterate(limit=101, chunksize=50)]
+        self.assertEqual(len(entities), 101)
+        entities = [e for e in ds.iterate(limit=101, chunksize=99)]
+        self.assertEqual(len(entities), 101)
 
     def test_dataset_statements_iteration(self):
         ds = Dataset("luanda_leaks")
@@ -61,4 +73,24 @@ class DatasetTestCase(ClickhouseTestCase):
 
         # more levels
         entities = [e for e in ds.expand(isabel, levels=2)]
-        self.assertEqual(len(entities), 219)
+        self.assertEqual(len(entities), 218)
+
+    def test_dataset_delete_entity(self):
+        import_json(self.data_file, "luanda_leaks_to_delete")
+        ds = Dataset("luanda_leaks_to_delete")
+        entities = [e for e in ds]
+        self.assertEqual(len(entities), 852)
+        entity = ds.EQ.first()
+        ds.delete(entity.id, sync=True)
+        entities = [e for e in ds]
+        self.assertEqual(len(entities), 851)
+        self.assertRaises(EntityNotFound, lambda: ds.get(entity.id))
+
+    def test_dataset_drop(self):
+        import_json(self.data_file, "luanda_leaks_to_drop")
+        ds = Dataset("luanda_leaks_to_drop")
+        entities = [e for e in ds]
+        self.assertEqual(len(entities), 852)
+        ds.drop(sync=True)
+        entities = [e for e in ds]
+        self.assertEqual(len(entities), 0)

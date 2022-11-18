@@ -1,7 +1,7 @@
 from tests.util import ClickhouseTestCase
 
 from ftm_columnstore.exceptions import InvalidQuery
-from ftm_columnstore.query import Query, EntityQuery
+from ftm_columnstore.query import EntityQuery, Query
 
 
 class QueryTestCase(ClickhouseTestCase):
@@ -58,7 +58,6 @@ class QueryTestCase(ClickhouseTestCase):
     def test_query_where_operators(self):
         """
         .where(prop=value) turns into (prop = '$prop' AND value = '$value')
-        or `value_num` for numeric properties based on ftm_columnstore_test schema
         except meta fields (dataset, entity_id, schema, origin)
         """
         q = Query().where(dataset="foo")
@@ -84,7 +83,7 @@ class QueryTestCase(ClickhouseTestCase):
         q = Query().where(schema="Payment", amount__gt=0)
         self.assertEqual(
             str(q),
-            "SELECT * FROM ftm_columnstore_test WHERE schema = 'Payment' AND (prop = 'amount' AND value_num > '0')",
+            "SELECT * FROM ftm_columnstore_test WHERE schema = 'Payment' AND (prop = 'amount' AND value > '0')",
         )
 
         # multiple ftm_columnstore_test prop lookups are combined with "OR" because of statement structure
@@ -109,25 +108,25 @@ class QueryTestCase(ClickhouseTestCase):
         q = Query().where(amount__gt=10)
         self.assertEqual(
             str(q),
-            "SELECT * FROM ftm_columnstore_test WHERE (prop = 'amount' AND value_num > '10')",
+            "SELECT * FROM ftm_columnstore_test WHERE (prop = 'amount' AND value > '10')",
         )
 
         q = Query().where(amount__gte=10)
         self.assertEqual(
             str(q),
-            "SELECT * FROM ftm_columnstore_test WHERE (prop = 'amount' AND value_num >= '10')",
+            "SELECT * FROM ftm_columnstore_test WHERE (prop = 'amount' AND value >= '10')",
         )
 
         q = Query().where(amount__lt=10)
         self.assertEqual(
             str(q),
-            "SELECT * FROM ftm_columnstore_test WHERE (prop = 'amount' AND value_num < '10')",
+            "SELECT * FROM ftm_columnstore_test WHERE (prop = 'amount' AND value < '10')",
         )
 
         q = Query().where(amount__lte=10)
         self.assertEqual(
             str(q),
-            "SELECT * FROM ftm_columnstore_test WHERE (prop = 'amount' AND value_num <= '10')",
+            "SELECT * FROM ftm_columnstore_test WHERE (prop = 'amount' AND value <= '10')",
         )
 
         q = Query().where(name__in=("alice", "lisa"))
@@ -160,14 +159,14 @@ class QueryTestCase(ClickhouseTestCase):
     def test_query_having(self):
         q = (
             Query()
-            .select("entity_id", "sum(value_num) as amount_sum")
+            .select("entity_id", "sum(value) as amount_sum")
             .where(schema="Payment", amount__gt=0)
             .group_by("entity_id")
             .having(amount_sum__gte=100)
         )
         self.assertEqual(
             str(q),
-            "SELECT entity_id, sum(value_num) as amount_sum FROM ftm_columnstore_test WHERE schema = 'Payment' AND (prop = 'amount' AND value_num > '0') GROUP BY entity_id HAVING amount_sum >= '100'",
+            "SELECT entity_id, sum(value) as amount_sum FROM ftm_columnstore_test WHERE schema = 'Payment' AND (prop = 'amount' AND value > '0') GROUP BY entity_id HAVING amount_sum >= '100'",
         )
 
         # no having if no group by
@@ -188,7 +187,7 @@ class QueryTestCase(ClickhouseTestCase):
         )
         self.assertEqual(
             str(q),
-            "SELECT a, b, c FROM ftm_columnstore_test WHERE (prop = 'amount' AND value_num = '1') OR (prop = 'name' AND value = 'bar') OR (prop = 'summary' AND value = 'f')",
+            "SELECT a, b, c FROM ftm_columnstore_test WHERE (prop = 'amount' AND value = '1') OR (prop = 'name' AND value = 'bar') OR (prop = 'summary' AND value = 'f')",
         )
 
         # group by should be combined
@@ -245,30 +244,30 @@ class QueryTestCase(ClickhouseTestCase):
         q = EntityQuery()
         self.assertEqual(
             str(q),
-            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test) GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE sflag = '') GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
         )
 
         # all filters etc. will be applied to the innerst query
         q = EntityQuery().where(canonical_id=1)
         self.assertEqual(
             str(q),
-            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE canonical_id = '1') GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE canonical_id = '1' AND sflag = '') GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
         )
         q = EntityQuery().where(entity_id=1)
         self.assertEqual(
             str(q),
-            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE entity_id = '1') GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE entity_id = '1' AND sflag = '') GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
         )
 
         q = EntityQuery()[:100]
         self.assertEqual(
             str(q),
-            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test LIMIT 0, 100) GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE sflag = '' LIMIT 0, 100) GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
         )
 
         # make sure dataset is passed along
         q = EntityQuery().where(dataset="luanda_leaks")
         self.assertEqual(
             str(q),
-            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE dataset = 'luanda_leaks') AND dataset = 'luanda_leaks' GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE dataset = 'luanda_leaks' AND sflag = '') AND dataset = 'luanda_leaks' GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
         )

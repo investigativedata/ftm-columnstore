@@ -12,6 +12,22 @@ from .exceptions import InvalidQuery
 
 TYPES = {p.name: p.type.name for p in model.properties}
 
+META_FIELDS = {
+    "id",
+    "dataset",
+    "schema",
+    "origin",
+    "canonical_id",
+    "entity_id",
+    "prop",
+    "prop_type",
+    "value",
+    "fingerprint",
+    "fingerprint_id",
+    "sflag",  # don't clash with ftm prop "flag"
+    "algorithm",
+}
+
 
 class Query:
     OPERATORS = {
@@ -23,6 +39,7 @@ class Query:
         "lte": "<=",
         "in": "IN",
         "null": "IS",
+        "not": "<>",
     }
     fields = None
 
@@ -50,8 +67,8 @@ class Query:
         self.order_direction = order_direction
         self.limit = limit
         self.offset = offset
-        self.where_lookup = where_lookup
         self.having_lookup = having_lookup
+        self.where_lookup = where_lookup
 
     def __str__(self) -> str:
         return self.get_query()
@@ -77,12 +94,17 @@ class Query:
         for i in res:
             return i[0]
 
+    def exists(self):
+        for res in self.execute(f"SELECT EXISTS ({self})"):
+            return bool(res[0])
+        return False
+
     def execute(self, query: Optional[Union["Query", str]] = None) -> Iterator[Any]:
         """return result iterator"""
         query = query or self.get_query()
         return self.driver.query(str(query))
 
-    def first(self):
+    def first(self) -> E:
         # return the first object
         for res in self:
             return res
@@ -146,46 +168,39 @@ class Query:
         return ", ".join(self.fields or "*")
 
     def _get_lookup_part(
-        self, lookup: dict, strict_fields: Optional[bool] = True
+        self,
+        lookup: dict,
+        strict_fields: Optional[bool] = True,
+        how: Optional[str] = "OR",
     ) -> str:
         """for where and having clause
 
         lookups for ftm properties (name="foo") will be rewritten as
         (prop="name" AND value="foo")
         """
-        meta_fields = {
-            "dataset",
-            "schema",
-            "origin",
-            "canonical_id",
-            "entity_id",
-            "prop",
-            "prop_type",
-            "value",
-            "fingerprint",
-            "fingerprint_id",
-        }
         meta_parts = set()
         parts = set()
         lookup = clean_dict(lookup)
 
-        def _get_part(key: str, value: str, operator: Optional[str] = None) -> str:
+        def _get_part(
+            key: str, value: Union[str | bool], operator: Optional[str] = None
+        ) -> str:
             operator = operator or "="
             if key in enums.PROPERTIES:
-                value_field = "value"
-                if TYPES.get(key) == "number":
-                    value_field = "value_num"
-                return f"(prop = '{key}' AND {value_field} {operator} {value})"
+                return f"(prop = '{key}' AND value {operator} {value})"
             return f"{key} {operator} {value}"
 
         for field, value in lookup.items():
             field, *operator = field.split("__")
 
             if strict_fields:
-                if field not in meta_fields | enums.PROPERTIES:
+                if field not in META_FIELDS | enums.PROPERTIES:
                     if field not in enums.PROPERTIES:
                         raise InvalidQuery(f"Lookup `{field}`: Invalid FtM property.")
-                    raise InvalidQuery(f"Lookup `{field}` not any of {meta_fields}")
+                    raise InvalidQuery(f"Lookup `{field}` not any of {META_FIELDS}")
+
+            if isinstance(value, bool):
+                value = int(value)
 
             if operator:
                 if len(operator) > 1:
@@ -211,7 +226,7 @@ class Query:
             else:
                 part = _get_part(field, f"'{value}'")
 
-            if field in meta_fields:
+            if field in META_FIELDS:
                 meta_parts.add(part)
             else:
                 parts.add(part)
@@ -222,7 +237,9 @@ class Query:
                 " AND ".join(sorted(meta_parts))
             )  # sort for easier testing
         if parts:
-            final_parts.append(" OR ".join(sorted(parts)))  # sort for easier testing
+            final_parts.append(
+                f" {how} ".join(sorted(parts))
+            )  # sort for easier testing
         return " AND ".join(final_parts)
 
     @property
@@ -235,7 +252,7 @@ class Query:
     def having_part(self) -> str:
         if not self.group_part or not self.having_lookup:
             return ""
-        return " HAVING " + self._get_lookup_part(self.having_lookup, False)
+        return " HAVING " + self._get_lookup_part(self.having_lookup, False, "AND")
 
     @property
     def group_part(self) -> str:
@@ -303,6 +320,14 @@ class EntityQuery(Query):
 
     fields = ("DISTINCT canonical_id",)
 
+    def __init__(self, *args, **kwargs):
+        # default: dont include statements with a flag set
+        where_lookup = kwargs.pop("where_lookup", {})
+        flag = where_lookup.pop("sflag", "")
+        where_lookup["sflag"] = flag
+        kwargs["where_lookup"] = where_lookup
+        super().__init__(*args, **kwargs)
+
     @property
     def dataset(self):
         if self.where_lookup is not None:
@@ -313,7 +338,7 @@ class EntityQuery(Query):
         entity = None
         for dataset, canonical_id, schema, props, values in res:
             # result is already aggregated per (id, schema) and sorted via query,
-            # so each row is 1 entity
+            # so each row is 1 entity; we still need to merge different schemata
             next_entity = model.get_proxy(
                 {
                     "id": canonical_id,
@@ -383,8 +408,18 @@ class EntityQuery(Query):
     def iterate(self, chunksize: Optional[int] = 1000) -> Iterator[E]:
         # iterate in chunks, useful for huge bulk streaming performance
         q = self
-        for i in itertools.count(0, chunksize):
-            chunk = (x for x in q[i : i + chunksize])
+        if q.limit is not None:
+            if q.limit < chunksize:
+                yield from (x for x in q)
+                return
+
+        for start in itertools.count(0, chunksize):
+            end = start + chunksize
+            if q.limit is not None:
+                if start >= q.limit:
+                    return
+                end = min([end, q.limit])
+            chunk = (x for x in q[start:end])
             try:
                 # maybe chunk is empty, then abort
                 entity = next(chunk)

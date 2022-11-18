@@ -23,6 +23,9 @@ class ClickhouseDriver:
     ):
         self.table = table
         self.table_fpx = f"{table}_fpx"
+        self.table_xref = f"{table}_xref"
+        self.view_fpx_schemas = f"{table}_fpx_schemas"
+        self.view_stats = f"{table}_stats"
         self.uri = uri
         self.ensure_table()
 
@@ -40,7 +43,11 @@ class ClickhouseDriver:
                 self.execute(stmt)
             except Exception as e:
                 if exists_ok and (
-                    table_exists(e, self.table) or table_exists(e, self.table_fpx)
+                    table_exists(e, self.table)
+                    or table_exists(e, self.table_fpx)  # noqa
+                    or table_exists(e, self.table_xref)  # noqa
+                    or table_exists(e, self.view_fpx_schemas)  # noqa
+                    or table_exists(e, self.view_stats)  # noqa
                 ):
                     pass
                 else:
@@ -54,7 +61,13 @@ class ClickhouseDriver:
         try:
             self.init(recreate=False)
         except errors.ServerException as e:
-            if table_exists(e, self.table) or table_exists(e, self.table_fpx):
+            if (
+                table_exists(e, self.table)
+                or table_exists(e, self.table_fpx)  # noqa
+                or table_exists(e, self.table_xref)  # noqa
+                or table_exists(e, self.view_fpx_schemas)  # noqa
+                or table_exists(e, self.view_stats)  # noqa
+            ):
                 pass
             else:
                 raise e
@@ -99,57 +112,94 @@ class ClickhouseDriver:
     def execute_iter(self, *args, **kwargs):
         return self.query(*args, **kwargs)
 
+    def sync(self):  # not guaranteed by clickhouse
+        self.execute(f"OPTIMIZE TABLE {self.table} FINAL DEDUPLICATE")
+
     @property
     def create_statements(self) -> Iterable[str]:
-        CREATE_TABLE = """
-        CREATE TABLE {table}
+        create_table = f"""
+        CREATE TABLE {self.table}
         (
-            `id`                      FixedString(40) NOT NULL,
-            `dataset`                 LowCardinality(String) NOT NULL,
-            `canonical_id`            FixedString(40) NOT NULL,
-            `entity_id`               String NOT NULL,
-            `schema`                  LowCardinality(String) NOT NULL,
-            `origin`                  LowCardinality(String) NOT NULL,
-            `prop`                    LowCardinality(String) NOT NULL,
-            `prop_type`               LowCardinality(String) NOT NULL,
-            `value`                   String NOT NULL,
-            `last_seen`               DateTime NOT NULL
-        ) ENGINE = ReplacingMergeTree(last_seen)
-        PRIMARY KEY ({primary_key})
-        ORDER BY ({order_by})
+            `id`                      FixedString(40),
+            `dataset`                 LowCardinality(String),
+            `canonical_id`            String,
+            `entity_id`               String,
+            `schema`                  LowCardinality(String),
+            `origin`                  LowCardinality(String),
+            `prop`                    LowCardinality(String),
+            `prop_type`               LowCardinality(String),
+            `value`                   String,
+            `ts`                      DateTime64,
+            `sflag`                   LowCardinality(String)
+        ) ENGINE = ReplacingMergeTree(ts)
+        PRIMARY KEY (dataset,schema,canonical_id)
+        ORDER BY (dataset,schema,canonical_id,entity_id,origin,prop,value)
         """
 
-        CREATE_TABLE_FPX = """
-        CREATE TABLE {table}
+        create_table_fpx = f"""
+        CREATE TABLE {self.table_fpx}
         (
-            `id`                      FixedString(40) NOT NULL,
-            `dataset`                 LowCardinality(String) NOT NULL,
-            `entity_id`               String NOT NULL,
-            `schema`                  LowCardinality(String) NOT NULL,
-            `prop`                    LowCardinality(String) NOT NULL,
-            `fingerprint`             String NOT NULL,
-            `fingerprint_id`          FixedString(40) NOT NULL,
-            INDEX fp_ix (fingerprint) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
+            `dataset`                 LowCardinality(String),
+            `entity_id`               String,
+            `schema`                  LowCardinality(String),
+            `prop`                    LowCardinality(String),
+            `algorithm`               LowCardinality(String),
+            `value`                   String
         ) ENGINE = ReplacingMergeTree()
-        PRIMARY KEY ({primary_key})
-        ORDER BY ({order_by})
+        PRIMARY KEY (algorithm,value,prop,schema,dataset)
+        ORDER BY (algorithm,value,prop,schema,dataset,entity_id)
         """
 
-        primary_key = "dataset,schema,canonical_id,entity_id,origin,prop,value"
-        order_by = primary_key
-        create_table = CREATE_TABLE.format(
-            table=self.table,
-            primary_key=primary_key,
-            order_by=order_by,
-        )
-        create_table_fpx = CREATE_TABLE_FPX.format(
-            table=self.table_fpx,
-            primary_key="fingerprint_id,schema,dataset",
-            order_by="fingerprint_id,schema,dataset",
-        )
+        create_table_xref = f"""
+        CREATE TABLE {self.table_xref}
+        (
+            `left_dataset`            String,
+            `left_id`                 String,
+            `left_schema`             LowCardinality(String),
+            `left_country`            LowCardinality(String),
+            `left_caption`            String,
+            `right_dataset`           String,
+            `right_id`                String,
+            `right_schema`            LowCardinality(String),
+            `right_country`           LowCardinality(String),
+            `right_caption`           String,
+            `judgement`               LowCardinality(String),
+            `score`                   Decimal32(8),
+            `ts`                      DateTime64,
+        ) ENGINE = ReplacingMergeTree(ts)
+        PRIMARY KEY (left_dataset,left_schema)
+        ORDER BY (left_dataset,left_schema,left_id,right_dataset,right_schema,right_id)
+        """
+
+        create_view_fpx_schemas = f"""
+        CREATE MATERIALIZED VIEW {self.view_fpx_schemas}
+        ENGINE = AggregatingMergeTree() ORDER BY (algorithm, value, schema)
+        AS SELECT
+            algorithm,
+            value,
+            schema,
+            count(schema) AS schema_count
+        FROM {self.table_fpx}
+        GROUP BY algorithm, value, schema
+        """
+
+        create_view_stats = f"""
+        CREATE MATERIALIZED VIEW {self.view_stats}
+        ENGINE = AggregatingMergeTree() ORDER BY (dataset, schema)
+        AS SELECT
+            dataset,
+            schema,
+            count(distinct canonical_id) AS entities,
+            count(*) AS statements
+        FROM {self.table}
+        GROUP BY dataset, schema
+        """
+
         projections = (
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_values (
                 SELECT * ORDER BY value,prop)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_canonical_lookup (
+                SELECT * ORDER BY entity_id,canonical_id)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_canonical_id (
                 SELECT * ORDER BY canonical_id,prop)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_entity_id (
@@ -159,16 +209,30 @@ class ClickhouseDriver:
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_prop (
                 SELECT * ORDER BY prop,schema,dataset)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_entities (
-                SELECT dataset,entity_id,schema,prop,groupUniqArray(value) as values
-                GROUP BY dataset,entity_id,schema,prop)""",
+                SELECT dataset,canonical_id,schema,prop,groupUniqArray(value) as values
+                GROUP BY dataset,canonical_id,schema,prop)""",
+            f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_value (
+                SELECT * ORDER BY value,schema,dataset)""",
+            f"""ALTER TABLE {self.table_xref} ADD PROJECTION {self.table_xref}_reverse (
+                SELECT * ORDER BY right_dataset,right_schema,right_id,left_dataset,left_schema,left_id)""",
         )
-        return (create_table, create_table_fpx, *projections)
+        return (
+            create_table,
+            create_table_fpx,
+            create_table_xref,
+            create_view_fpx_schemas,
+            create_view_stats,
+            *projections,
+        )
 
     @property
     def drop_statements(self) -> str:
         return (
             f"DROP TABLE IF EXISTS {self.table}",
             f"DROP TABLE IF EXISTS {self.table_fpx}",
+            f"DROP TABLE IF EXISTS {self.table_xref}",
+            f"DROP VIEW IF EXISTS {self.view_fpx_schemas}",
+            f"DROP VIEW IF EXISTS {self.view_stats}",
         )
 
 
