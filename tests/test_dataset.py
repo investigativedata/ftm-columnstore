@@ -64,20 +64,45 @@ class DatasetTestCase(ClickhouseTestCase):
         self.assertDictEqual(
             entity.to_dict(),
             {
+                "datasets": ["luanda_leaks"],
                 "id": "0372a4b5d9c3f01f5b9eb1dddf8677ecc777b0a3",
                 "schema": "Company",
                 "properties": {
+                    "name": ["Sopor - Sociedade Distribuidora de Combustíveis, S.A."],
+                    "dissolutionDate": ["2014-12-30"],
                     "alephUrl": [
                         "https://aleph.occrp.org/api/2/entities/0372a4b5d9c3f01f5b9eb1dddf8677ecc777b0a3.f14091b5d76ff7b3b2c846ba4ce68395ac36145c"
                     ],
-                    "sector": ["Oil, Gas and Coal"],
-                    "dissolutionDate": ["2014-12-30"],
-                    "name": ["Sopor - Sociedade Distribuidora de Combustíveis, S.A."],
                     "incorporationDate": ["1957-07-17"],
-                    "proof": ["6ea1f60f2634552390f3e9d1ac1b81a119d6d73e"],
                     "jurisdiction": ["pt"],
+                    "proof": ["6ea1f60f2634552390f3e9d1ac1b81a119d6d73e"],
+                    "sector": ["Oil, Gas and Coal"],
                 },
+                "referents": [],
             },
+        )
+
+    def test_dataset_get_composite_entity(self):
+        import_json(self.data_file, "luanda_leaks2")
+        ds = get_dataset("luanda_leaks,luanda_leaks2")
+        entity = ds.get("0372a4b5d9c3f01f5b9eb1dddf8677ecc777b0a3")
+        data = entity.to_dict()
+        self.assertDictEqual(
+            data["properties"],
+            {
+                "name": ["Sopor - Sociedade Distribuidora de Combustíveis, S.A."],
+                "dissolutionDate": ["2014-12-30"],
+                "alephUrl": [
+                    "https://aleph.occrp.org/api/2/entities/0372a4b5d9c3f01f5b9eb1dddf8677ecc777b0a3.f14091b5d76ff7b3b2c846ba4ce68395ac36145c"
+                ],
+                "incorporationDate": ["1957-07-17"],
+                "jurisdiction": ["pt"],
+                "proof": ["6ea1f60f2634552390f3e9d1ac1b81a119d6d73e"],
+                "sector": ["Oil, Gas and Coal"],
+            },
+        )
+        self.assertSetEqual(
+            set(entity.datasets), set(["luanda_leaks", "luanda_leaks2"])
         )
 
     def test_dataset_entity_resolve(self):

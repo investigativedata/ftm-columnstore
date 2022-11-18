@@ -4,7 +4,7 @@ from typing import Any, Iterable, Iterator, Optional, Union
 import pandas as pd
 from banal import as_bool, clean_dict, is_listish
 from followthemoney import model
-from followthemoney.proxy import E
+from nomenklatura.entity import CE, CompositeEntity
 
 from . import enums
 from .driver import ClickhouseDriver, get_driver
@@ -104,7 +104,7 @@ class Query:
         query = query or self.get_query()
         return self.driver.query(str(query))
 
-    def first(self) -> E:
+    def first(self) -> CE:
         # return the first object
         for res in self:
             return res
@@ -331,20 +331,25 @@ class EntityQuery(Query):
     @property
     def datasets(self):
         if self.where_lookup is not None:
-            return self.where_lookup.get("dataset__in")
+            if "dataset" in self.where_lookup:
+                return [self.where_lookup["dataset"]]
+            if "dataset__in" in self.where_lookup:
+                return self.where_lookup["dataset__in"]
 
-    def __iter__(self) -> Iterator[E]:
+    def __iter__(self) -> Iterator[CE]:
         res = self.execute()
         entity = None
-        for dataset, canonical_id, schema, props, values in res:
+        for datasets, canonical_id, schema, props, values in res:
             # result is already aggregated per (id, schema) and sorted via query,
             # so each row is 1 entity; we still need to merge different schemata
-            next_entity = model.get_proxy(
+            next_entity = CompositeEntity.from_dict(
+                model,
                 {
                     "id": canonical_id,
                     "schema": schema,
                     "properties": dict(zip(props, values)),
-                }
+                    "datasets": datasets,
+                },
             )
             if entity is None:
                 entity = next_entity
@@ -359,53 +364,51 @@ class EntityQuery(Query):
     def get_query(self) -> str:
         """
         first get matching canonical_ids for given where clause(s),
-        then return 1 row per dataset->canonical_id->schema with props and values
+        then return 1 row per canonical_id->schema with props and values
         as arrays
 
         example:
 
 
-        SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (
-            SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm
+        SELECT datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (
+            SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm
             WHERE canonical_id IN (
                 SELECT DISTINCT canonical_id FROM ftm
                 WHERE schema = 'Person' AND (prop = 'name' AND value = 'Simon')
             )
-            GROUP BY dataset, canonical_id, schema, prop
+            GROUP BY canonical_id, schema, prop
         )
-        GROUP BY dataset, canonical_id, schema
-        ORDER BY dataset, canonical_id, schema
+        GROUP BY canonical_id, schema
+        ORDER BY canonical_id, schema
 
         """
         inner = super().get_query()
         outer = (
             Query()
             .select(
-                "dataset",
+                "groupUniqArray(dataset) AS datasets",
                 "canonical_id",
                 "schema",
                 "prop",
-                "groupUniqArray(value) as values",
+                "groupUniqArray(value) AS values",
             )
             .where(canonical_id__in=inner, dataset__in=self.datasets)
-            .group_by("dataset", "canonical_id", "schema", "prop")
+            .group_by("canonical_id", "schema", "prop")
         )
         return str(
             Query(outer)
             .select(
-                "dataset",
+                "arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets",
                 "canonical_id",
                 "schema",
-                "groupArray(prop) as props",
-                "groupArray(values) as values",
+                "groupArray(prop) AS props",
+                "groupArray(values) AS values",
             )
-            .group_by("dataset", "canonical_id", "schema")
-            .order_by(
-                "dataset", "canonical_id", "schema"
-            )  # make sure ordering to easier build entities later
+            .group_by("canonical_id", "schema")
+            .order_by("canonical_id", "schema")  # important for streaming
         )
 
-    def iterate(self, chunksize: Optional[int] = 1000) -> Iterator[E]:
+    def iterate(self, chunksize: Optional[int] = 1000) -> Iterator[CE]:
         # iterate in chunks, useful for huge bulk streaming performance
         q = self
         if q.limit is not None:
