@@ -1,8 +1,7 @@
-from tests.util import ClickhouseTestCase
-
-from ftm_columnstore.dataset import Dataset
+from ftm_columnstore.dataset import Dataset, Datasets, get_dataset
 from ftm_columnstore.exceptions import EntityNotFound
 from ftm_columnstore.io import import_json
+from tests.util import ClickhouseTestCase
 
 
 class DatasetTestCase(ClickhouseTestCase):
@@ -12,7 +11,32 @@ class DatasetTestCase(ClickhouseTestCase):
         self.assertEqual(ds.driver.table_fpx, "ftm_columnstore_test_fpx")
         self.assertIsNone(ds.origin)
 
+        ds = get_dataset("luanda_leaks")
+        self.assertIsInstance(ds, Dataset)
+        self.assertEqual(ds.driver.table, "ftm_columnstore_test")
+        self.assertEqual(ds.driver.table_fpx, "ftm_columnstore_test_fpx")
+        self.assertIsNone(ds.origin)
+
+        # multiple datasets
+        ds = get_dataset("foo,bar")
+        self.assertIsInstance(ds, Datasets)
+        self.assertEqual(ds.driver.table, "ftm_columnstore_test")
+        self.assertEqual(ds.driver.table_fpx, "ftm_columnstore_test_fpx")
+        self.assertIsNone(ds.origin)
+
+    def test_dataset_queries(self):
+        ds = get_dataset("foo")
+        self.assertEqual(
+            str(ds.Q), "SELECT * FROM ftm_columnstore_test WHERE dataset IN ('foo')"
+        )
+        ds = get_dataset("foo,bar")
+        self.assertEqual(
+            str(ds.Q),
+            "SELECT * FROM ftm_columnstore_test WHERE dataset IN ('foo', 'bar')",
+        )
+
     def test_dataset_iteration(self):
+        import_json(self.data_file, "another_dataset")  # control group
         ds = Dataset("luanda_leaks")
         entities = [e for e in ds]
         self.assertEqual(len(entities), 852)

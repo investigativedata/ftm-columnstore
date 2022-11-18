@@ -329,9 +329,9 @@ class EntityQuery(Query):
         super().__init__(*args, **kwargs)
 
     @property
-    def dataset(self):
+    def datasets(self):
         if self.where_lookup is not None:
-            return self.where_lookup.get("dataset")
+            return self.where_lookup.get("dataset__in")
 
     def __iter__(self) -> Iterator[E]:
         res = self.execute()
@@ -387,7 +387,7 @@ class EntityQuery(Query):
                 "prop",
                 "groupUniqArray(value) as values",
             )
-            .where(canonical_id__in=inner, dataset=self.dataset)
+            .where(canonical_id__in=inner, dataset__in=self.datasets)
             .group_by("dataset", "canonical_id", "schema", "prop")
         )
         return str(

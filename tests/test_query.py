@@ -1,7 +1,6 @@
-from tests.util import ClickhouseTestCase
-
 from ftm_columnstore.exceptions import InvalidQuery
 from ftm_columnstore.query import EntityQuery, Query
+from tests.util import ClickhouseTestCase
 
 
 class QueryTestCase(ClickhouseTestCase):
@@ -266,8 +265,18 @@ class QueryTestCase(ClickhouseTestCase):
         )
 
         # make sure dataset is passed along
-        q = EntityQuery().where(dataset="luanda_leaks")
+        q = EntityQuery().where(dataset__in=["luanda_leaks"])
         self.assertEqual(
             str(q),
-            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE dataset = 'luanda_leaks' AND sflag = '') AND dataset = 'luanda_leaks' GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
+            "SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE dataset IN ('luanda_leaks') AND sflag = '') AND dataset IN ('luanda_leaks') GROUP BY canonical_id, dataset, prop, schema) GROUP BY canonical_id, dataset, schema ORDER BY dataset, canonical_id, schema ASC",
+        )
+
+    def test_query_multiple_datasets(self):
+        q = Query().where(dataset__in=("foo", "bar"))
+        self.assertEqual(
+            str(q), "SELECT * FROM ftm_columnstore_test WHERE dataset IN ('foo', 'bar')"
+        )
+        q = Query().where(dataset__in=["foo"])
+        self.assertEqual(
+            str(q), "SELECT * FROM ftm_columnstore_test WHERE dataset IN ('foo')"
         )

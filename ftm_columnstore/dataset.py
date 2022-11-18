@@ -1,6 +1,6 @@
 import logging
 from functools import cached_property, lru_cache
-from typing import Iterator, List, Optional, Union
+from typing import Iterable, Iterator, List, Optional, Union
 
 import pandas as pd
 from followthemoney.proxy import E
@@ -85,21 +85,72 @@ class EntityBulkWriter(BulkWriter):
         return super().flush()
 
 
-class Dataset:
+class Datasets:
     def __init__(
         self,
-        name: str,
+        names: Iterable[str],
         origin: Optional[str] = None,
         driver: Optional[ClickhouseDriver] = None,
         ignore_errors: Optional[bool] = False,
     ):
-        self.name = name
+        self.name = ",".join(names)
         self.origin = origin
         self.driver = driver or get_driver()
         self.ignore_errors = ignore_errors
-        self.Q = Query(driver=driver).where(dataset=name, origin=origin)
-        self.EQ = EntityQuery(driver=driver).where(dataset=name, origin=origin)
-        self.FPQ = Query(driver=driver, from_=self.driver.table_fpx).where(dataset=name)
+        self.Q = Query(driver=driver).where(dataset__in=names, origin=origin)
+        self.EQ = EntityQuery(driver=driver).where(dataset__in=names, origin=origin)
+        self.FPQ = Query(driver=driver, from_=self.driver.table_fpx).where(
+            dataset__in=names
+        )
+
+    def iterate(
+        self,
+        canonical_id: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        origin: Optional[str] = None,
+        chunksize: Optional[int] = 1000,
+        schema: Optional[List[str]] = None,
+        limit: Optional[int] = None,
+    ) -> Iterator[E]:
+        q = self.EQ
+        if canonical_id is not None:
+            q = q.where(canonical_id=canonical_id)
+        if entity_id is not None:
+            q = q.where(entity_id=entity_id)
+        if origin is not None:
+            q = q.where(origin=origin)
+        if schema is not None and len(schema):
+            q = q.where(schema__in=schema)
+        if limit is not None:
+            q = q[:limit]
+        return q.iterate(chunksize=chunksize)
+
+    def statements(self, origin: Optional[str] = None) -> Iterator[tuple]:
+        origin = origin or self.origin
+        q = self.Q.select("DISTINCT ON (id) *").where(origin=origin)
+        return q.iterate()
+
+    def get(self, id_: str, canonical: Optional[bool] = True) -> E:
+        if canonical:
+            canonical_id = self.get_canonical_id(id_)
+            for entity in self.iterate(canonical_id=canonical_id):
+                return entity
+        else:
+            for entity in self.iterate(entity_id=id_):
+                return entity
+
+    def get_canonical_id(self, id_: str, origin: Optional[str] = None) -> str:
+        origin = origin or self.origin
+        for res in (
+            self.Q.select("canonical_id")
+            .where(entity_id=id_, origin=origin, sflag__not=FLAG.canonized.value)
+            .order_by("ts", ascending=False)[0]
+        ):
+            return res[0]
+        # otherwise id_ is already canonized:
+        if self.Q.where(canonical_id=id_, origin=origin).exists():
+            return id_
+        raise EntityNotFound(id_)
 
     def drop(self, sync: Optional[bool] = False):
         log.info("Dropping ftm-store: %s" % self.name)
@@ -138,124 +189,6 @@ class Dataset:
         if sync:
             self.driver.sync()
         return res
-
-    def put(
-        self,
-        entity: E,
-        origin: Optional[str] = None,
-        with_fingerprints: Optional[bool] = True,
-    ):
-        bulk = self.bulk(
-            origin=origin or self.origin, with_fingerprints=with_fingerprints
-        )
-        bulk.put(entity)
-        return bulk.flush()
-
-    def bulk(
-        self, origin: Optional[str] = None, with_fingerprints: Optional[bool] = True
-    ) -> "EntityBulkWriter":
-        return EntityBulkWriter(
-            self,
-            with_fingerprints=with_fingerprints,
-            origin=origin or self.origin,
-            ignore_errors=self.ignore_errors,
-        )
-
-    @cached_property
-    def bulk_statements(self) -> "BulkWriter":
-        return BulkWriter(self, self.origin, ignore_errors=self.ignore_errors)
-
-    def iterate(
-        self,
-        canonical_id: Optional[str] = None,
-        entity_id: Optional[str] = None,
-        origin: Optional[str] = None,
-        chunksize: Optional[int] = 1000,
-        schema: Optional[List[str]] = None,
-        limit: Optional[int] = None,
-    ) -> Iterator[E]:
-        q = self.EQ
-        if canonical_id is not None:
-            q = q.where(canonical_id=canonical_id)
-        if entity_id is not None:
-            q = q.where(entity_id=entity_id)
-        if origin is not None:
-            q = q.where(origin=origin)
-        if schema is not None and len(schema):
-            q = q.where(schema__in=schema)
-        if limit is not None:
-            q = q[:limit]
-        return q.iterate(chunksize=chunksize)
-
-    def statements(self, origin: Optional[str] = None) -> Iterator[tuple]:
-        origin = origin or self.origin
-        q = self.Q.select("DISTINCT ON (id) *").where(dataset=self.name, origin=origin)
-        return q.iterate()
-
-    def get(self, id_: str, canonical: Optional[bool] = True) -> E:
-        if canonical:
-            canonical_id = self.get_canonical_id(id_)
-            for entity in self.iterate(canonical_id=canonical_id):
-                return entity
-        else:
-            for entity in self.iterate(entity_id=id_):
-                return entity
-
-    def get_canonical_id(self, id_: str, origin: Optional[str] = None) -> str:
-        origin = origin or self.origin
-        for res in (
-            self.Q.select("canonical_id")
-            .where(entity_id=id_, origin=origin, sflag__not=FLAG.canonized.value)
-            .order_by("ts", ascending=False)[0]
-        ):
-            return res[0]
-        # otherwise id_ is already canonized:
-        if self.Q.where(canonical_id=id_, origin=origin).exists():
-            return id_
-        raise EntityNotFound(id_)
-
-    def canonize(
-        self, entity_id: str, canonical_id: str, sync: Optional[bool] = False
-    ) -> int:
-        """
-        set canonical id for entity and all references, add flag for old statements
-        to exclude from default query
-        """
-        entity_id = str(entity_id)
-        entity = self.get(entity_id)
-        # first write references to avoid race condition
-        bulk = self.bulk_statements
-        # update_bulk = self.bulk_statements_canonize
-        for e in self.expand(entity):
-            new_ref_id = make_entity_id(canonical_id, e.id)
-            for stmt in statements_from_entity(e, self.name, self.origin):
-                # write old stmt as canonized
-                old_stmt = stmt.copy()
-                old_stmt["sflag"] = FLAG.canonized.value
-                bulk.put(old_stmt)
-                # write new canonized stmt
-                stmt["canonical_id"] = new_ref_id
-                if stmt["prop_type"] == "entity" and stmt["value"] == entity_id:
-                    stmt["value"] = canonical_id
-                stmt["id"] = stmt_key(**stmt)
-                bulk.put(stmt)
-
-        # write new entity statements
-        for stmt in statements_from_entity(
-            entity, self.name, self.origin, canonical_id
-        ):
-            bulk.put(stmt)
-
-        # mark write old entity statements as canonized
-        for stmt in statements_from_entity(
-            entity, self.name, self.origin, sflag=FLAG.canonized.value
-        ):
-            bulk.put(stmt)
-
-        if sync:
-            # make sure dedupe happens in sync
-            bulk.flush()
-            self.driver.sync()
 
     def expand(self, entity: E, levels: Optional[int] = 1) -> Iterator[E]:
         """
@@ -326,6 +259,86 @@ class Dataset:
             )
 
 
+class Dataset(Datasets):
+    def __init__(
+        self,
+        name: str,
+        origin: Optional[str] = None,
+        driver: Optional[ClickhouseDriver] = None,
+        ignore_errors: Optional[bool] = False,
+    ):
+        super().__init__([name], origin, driver, ignore_errors)
+
+    def put(
+        self,
+        entity: E,
+        origin: Optional[str] = None,
+        with_fingerprints: Optional[bool] = True,
+    ):
+        bulk = self.bulk(
+            origin=origin or self.origin, with_fingerprints=with_fingerprints
+        )
+        bulk.put(entity)
+        return bulk.flush()
+
+    def bulk(
+        self, origin: Optional[str] = None, with_fingerprints: Optional[bool] = True
+    ) -> "EntityBulkWriter":
+        return EntityBulkWriter(
+            self,
+            with_fingerprints=with_fingerprints,
+            origin=origin or self.origin,
+            ignore_errors=self.ignore_errors,
+        )
+
+    @cached_property
+    def bulk_statements(self) -> "BulkWriter":
+        return BulkWriter(self, self.origin, ignore_errors=self.ignore_errors)
+
+    def canonize(
+        self, entity_id: str, canonical_id: str, sync: Optional[bool] = False
+    ) -> int:
+        """
+        set canonical id for entity and all references, add flag for old statements
+        to exclude from default query
+        """
+        entity_id = str(entity_id)
+        entity = self.get(entity_id)
+        # first write references to avoid race condition
+        bulk = self.bulk_statements
+        # update_bulk = self.bulk_statements_canonize
+        for e in self.expand(entity):
+            new_ref_id = make_entity_id(canonical_id, e.id)
+            for stmt in statements_from_entity(e, self.name, self.origin):
+                # write old stmt as canonized
+                old_stmt = stmt.copy()
+                old_stmt["sflag"] = FLAG.canonized.value
+                bulk.put(old_stmt)
+                # write new canonized stmt
+                stmt["canonical_id"] = new_ref_id
+                if stmt["prop_type"] == "entity" and stmt["value"] == entity_id:
+                    stmt["value"] = canonical_id
+                stmt["id"] = stmt_key(**stmt)
+                bulk.put(stmt)
+
+        # write new entity statements
+        for stmt in statements_from_entity(
+            entity, self.name, self.origin, canonical_id
+        ):
+            bulk.put(stmt)
+
+        # mark write old entity statements as canonized
+        for stmt in statements_from_entity(
+            entity, self.name, self.origin, sflag=FLAG.canonized.value
+        ):
+            bulk.put(stmt)
+
+        if sync:
+            # make sure dedupe happens in sync
+            bulk.flush()
+            self.driver.sync()
+
+
 @lru_cache(128)
 def get_dataset(
     name: str,
@@ -334,4 +347,6 @@ def get_dataset(
     ignore_errors: Optional[bool] = False,
 ):
     driver = driver or get_driver()
+    if "," in name:
+        return Datasets(name.split(","), origin, driver, ignore_errors)
     return Dataset(name, origin, driver, ignore_errors)
