@@ -8,7 +8,7 @@ import click
 from followthemoney.cli.cli import cli as main
 from followthemoney.cli.util import MAX_LINE, write_object
 
-from . import predict, settings, statements, xref
+from . import settings, statements, xref
 from .dataset import Dataset
 from .driver import get_driver
 from .nk import apply_nk
@@ -401,6 +401,11 @@ def cli_predict():
 def predict_create_training_data(
     output_dir, limit, datasets: Optional[Iterable[str]] = None
 ):
+    try:
+        from . import predict
+    except ModuleNotFoundError:
+        raise click.ClickException("Please install `followthemoney-typepredict`")
+
     with predict.get_sampler(output_dir) as sampler:
         for proxy in predict.get_sample_entities(limit, datasets):
             sampler.add_entity(proxy)
