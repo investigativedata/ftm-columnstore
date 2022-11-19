@@ -30,8 +30,7 @@ setup(
         "Click",
         "clickhouse-driver[numpy]",
         "followthemoney",
-        "followthemoney_typepredict @ git+https://github.com/alephdata/followthemoney-typepredict.git",
-        "nomenklatura @ git+https://github.com/simonwoerpel/nomenklatura.git@ftmcstore-adjustments",
+        "nomenklatura",
         "pandas",
         "pyicu",
         "structlog",
@@ -39,5 +38,10 @@ setup(
         "libindic-utils",
         "metaphone",
     ],
-    entry_points={"followthemoney.cli": ["cstore = ftm_columnstore.cli:cli"]},
+    extras_require={
+        "predict": [
+            "followthemoney_typepredict @ git+https://github.com/alephdata/followthemoney-typepredict.git",
+        ],
+    },
+    entry_points={"console_scripts": ["ftmcs = ftm_columnstore.cli:cli"]},
 )
