@@ -27,7 +27,7 @@ class CanonicalTestCase(ClickhouseTestCase):
         """
         canonize doesn't remove old statements, it only adds new ones with
         new canonical_id and adds statements to references
-        and marks old statements as flag = 'canonized' to exclude from
+        and marks old statements as status = 'canonized' to exclude from
         default queries
         """
         p = model.get_proxy(self.person)
@@ -38,6 +38,7 @@ class CanonicalTestCase(ClickhouseTestCase):
         m.id = 3
         canonical_id = make_entity_id("C", p.id)
         ds = get_dataset("test_canonize")
+        ds = ds.store
         ds.put(p)
         ds.put(o)
         ds.put(m)
@@ -61,7 +62,7 @@ class CanonicalTestCase(ClickhouseTestCase):
         self.assertEqual(len(expanded), 2)
 
         # check we marked 5 statements as canonized
-        old_stmts = ds.Q.where(sflag="canonized")
+        old_stmts = ds.Q.where(sstatus="canonized")
         self.assertEqual(len(old_stmts), 5)
 
         # org has only 1 membership pointing to it, the new canonized one
@@ -71,5 +72,4 @@ class CanonicalTestCase(ClickhouseTestCase):
         # only 1 (merged) person
         q = ds.EQ.where(schema="Person")
         entities = list(q)
-        # FIXME MergeTree dedupe not working correctly here
-        self.assertEqual(len(entities), 2)
+        self.assertEqual(len(entities), 1)

@@ -1,5 +1,5 @@
 import itertools
-from typing import Any, Iterable, Iterator, Optional, Union
+from typing import Any, Iterable, Iterator, List, Optional, Union
 
 import pandas as pd
 from banal import as_bool, clean_dict, is_listish
@@ -24,7 +24,7 @@ META_FIELDS = {
     "value",
     "fingerprint",
     "fingerprint_id",
-    "sflag",  # don't clash with ftm prop "flag"
+    "sstatus",  # don't clash with ftm prop "status"
     "algorithm",
 }
 
@@ -74,15 +74,15 @@ class Query:
         return self.get_query()
 
     def __iter__(self) -> Iterator[Any]:
-        return self.iterate()
+        yield from self.iterate()
 
     def __len__(self) -> int:
         return self.count()
 
     def iterate(self):
-        return self.execute()
+        yield from self.execute()
 
-    def count(self):
+    def count(self) -> int:
         # FIXME this doesn't cover aggregated cases for `having`
         count_part = "*"
         if self.group_by_fields:
@@ -94,7 +94,7 @@ class Query:
         for i in res:
             return i[0]
 
-    def exists(self):
+    def exists(self) -> bool:
         for res in self.execute(f"SELECT EXISTS ({self})"):
             return bool(res[0])
         return False
@@ -102,9 +102,9 @@ class Query:
     def execute(self, query: Optional[Union["Query", str]] = None) -> Iterator[Any]:
         """return result iterator"""
         query = query or self.get_query()
-        return self.driver.query(str(query))
+        yield from self.driver.query(str(query))
 
-    def first(self) -> CE:
+    def first(self) -> Any:
         # return the first object
         for res in self:
             return res
@@ -321,20 +321,21 @@ class EntityQuery(Query):
     fields = ("DISTINCT canonical_id",)
 
     def __init__(self, *args, **kwargs):
-        # default: dont include statements with a flag set
+        # default: dont include statements with a status set
         where_lookup = kwargs.pop("where_lookup", {})
-        flag = where_lookup.pop("sflag", "")
-        where_lookup["sflag"] = flag
+        status = where_lookup.pop("sstatus", "")
+        where_lookup["sstatus"] = status
         kwargs["where_lookup"] = where_lookup
         super().__init__(*args, **kwargs)
 
     @property
-    def datasets(self):
+    def datasets(self) -> List[str]:
         if self.where_lookup is not None:
             if "dataset" in self.where_lookup:
                 return [self.where_lookup["dataset"]]
             if "dataset__in" in self.where_lookup:
                 return self.where_lookup["dataset__in"]
+        return []
 
     def __iter__(self) -> Iterator[CE]:
         res = self.execute()
@@ -392,9 +393,11 @@ class EntityQuery(Query):
                 "prop",
                 "groupUniqArray(value) AS values",
             )
-            .where(canonical_id__in=inner, dataset__in=self.datasets)
+            .where(canonical_id__in=inner)
             .group_by("canonical_id", "schema", "prop")
         )
+        if self.datasets:
+            outer = outer.where(dataset__in=self.datasets)
         return str(
             Query(outer)
             .select(
@@ -437,30 +440,6 @@ class EntityQuery(Query):
                 except StopIteration:
                     break  # to next chunk
 
-    def as_table(self):
-        def _unpack(serie: pd.Series) -> pd.Series:
-            return pd.Series([i for x in serie.values for i in x]).unique()
-
-        inner = super().get_query()
-        q = (
-            Query()
-            .select(
-                "dataset",
-                "canonical_id",
-                "schema",
-                "prop",
-                "groupUniqArray(value) as values",
-            )
-            .where(canonical_id__in=inner)
-            .group_by("dataset", "canonical_id", "schema", "prop")
-        )
-        df = self.driver.query_dataframe(str(q))
-        df = (
-            df.groupby(["dataset", "schema", "canonical_id", "prop"])
-            .agg({"values": _unpack})
-            .reset_index()
-        )
-        df = df.pivot(
-            ["dataset", "canonical_id", "schema"], "prop", "values"
-        ).reset_index()
-        return df
+    def first(self) -> CE:
+        res: CE = super().first()
+        return res

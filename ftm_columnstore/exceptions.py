@@ -1,3 +1,6 @@
+from clickhouse_driver.errors import Error as ClickhouseError  # noqa
+
+
 class ImproperlyConfigured(Exception):
     pass
 
@@ -11,4 +14,8 @@ class EntityNotFound(Exception):
 
 
 class InvalidAlgorithm(Exception):
+    pass
+
+
+class DatasetException(Exception):
     pass
