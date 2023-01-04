@@ -1,10 +1,10 @@
 import itertools
-from typing import Any, Iterable, Iterator, Optional, Union
+from typing import Any, Iterable, Iterator, List, Optional, Union
 
 import pandas as pd
 from banal import as_bool, clean_dict, is_listish
 from followthemoney import model
-from followthemoney.proxy import E
+from nomenklatura.entity import CE, CompositeEntity
 
 from . import enums
 from .driver import ClickhouseDriver, get_driver
@@ -24,7 +24,7 @@ META_FIELDS = {
     "value",
     "fingerprint",
     "fingerprint_id",
-    "sflag",  # don't clash with ftm prop "flag"
+    "sstatus",  # don't clash with ftm prop "status"
     "algorithm",
 }
 
@@ -74,15 +74,15 @@ class Query:
         return self.get_query()
 
     def __iter__(self) -> Iterator[Any]:
-        return self.iterate()
+        yield from self.iterate()
 
     def __len__(self) -> int:
         return self.count()
 
     def iterate(self):
-        return self.execute()
+        yield from self.execute()
 
-    def count(self):
+    def count(self) -> int:
         # FIXME this doesn't cover aggregated cases for `having`
         count_part = "*"
         if self.group_by_fields:
@@ -94,7 +94,7 @@ class Query:
         for i in res:
             return i[0]
 
-    def exists(self):
+    def exists(self) -> bool:
         for res in self.execute(f"SELECT EXISTS ({self})"):
             return bool(res[0])
         return False
@@ -102,9 +102,9 @@ class Query:
     def execute(self, query: Optional[Union["Query", str]] = None) -> Iterator[Any]:
         """return result iterator"""
         query = query or self.get_query()
-        return self.driver.query(str(query))
+        yield from self.driver.query(str(query))
 
-    def first(self) -> E:
+    def first(self) -> Any:
         # return the first object
         for res in self:
             return res
@@ -321,30 +321,36 @@ class EntityQuery(Query):
     fields = ("DISTINCT canonical_id",)
 
     def __init__(self, *args, **kwargs):
-        # default: dont include statements with a flag set
+        # default: dont include statements with a status set
         where_lookup = kwargs.pop("where_lookup", {})
-        flag = where_lookup.pop("sflag", "")
-        where_lookup["sflag"] = flag
+        status = where_lookup.pop("sstatus", "")
+        where_lookup["sstatus"] = status
         kwargs["where_lookup"] = where_lookup
         super().__init__(*args, **kwargs)
 
     @property
-    def dataset(self):
+    def datasets(self) -> List[str]:
         if self.where_lookup is not None:
-            return self.where_lookup.get("dataset")
+            if "dataset" in self.where_lookup:
+                return [self.where_lookup["dataset"]]
+            if "dataset__in" in self.where_lookup:
+                return self.where_lookup["dataset__in"]
+        return []
 
-    def __iter__(self) -> Iterator[E]:
+    def __iter__(self) -> Iterator[CE]:
         res = self.execute()
         entity = None
-        for dataset, canonical_id, schema, props, values in res:
+        for datasets, canonical_id, schema, props, values in res:
             # result is already aggregated per (id, schema) and sorted via query,
             # so each row is 1 entity; we still need to merge different schemata
-            next_entity = model.get_proxy(
+            next_entity = CompositeEntity.from_dict(
+                model,
                 {
                     "id": canonical_id,
                     "schema": schema,
                     "properties": dict(zip(props, values)),
-                }
+                    "datasets": datasets,
+                },
             )
             if entity is None:
                 entity = next_entity
@@ -359,53 +365,53 @@ class EntityQuery(Query):
     def get_query(self) -> str:
         """
         first get matching canonical_ids for given where clause(s),
-        then return 1 row per dataset->canonical_id->schema with props and values
+        then return 1 row per canonical_id->schema with props and values
         as arrays
 
         example:
 
 
-        SELECT dataset, canonical_id, schema, groupArray(prop) as props, groupArray(values) as values FROM (
-            SELECT dataset, canonical_id, schema, prop, groupUniqArray(value) as values FROM ftm
+        SELECT datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (
+            SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm
             WHERE canonical_id IN (
                 SELECT DISTINCT canonical_id FROM ftm
                 WHERE schema = 'Person' AND (prop = 'name' AND value = 'Simon')
             )
-            GROUP BY dataset, canonical_id, schema, prop
+            GROUP BY canonical_id, schema, prop
         )
-        GROUP BY dataset, canonical_id, schema
-        ORDER BY dataset, canonical_id, schema
+        GROUP BY canonical_id, schema
+        ORDER BY canonical_id, schema
 
         """
         inner = super().get_query()
         outer = (
             Query()
             .select(
-                "dataset",
+                "groupUniqArray(dataset) AS datasets",
                 "canonical_id",
                 "schema",
                 "prop",
-                "groupUniqArray(value) as values",
+                "groupUniqArray(value) AS values",
             )
-            .where(canonical_id__in=inner, dataset=self.dataset)
-            .group_by("dataset", "canonical_id", "schema", "prop")
+            .where(canonical_id__in=inner)
+            .group_by("canonical_id", "schema", "prop")
         )
+        if self.datasets:
+            outer = outer.where(dataset__in=self.datasets)
         return str(
             Query(outer)
             .select(
-                "dataset",
+                "arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets",
                 "canonical_id",
                 "schema",
-                "groupArray(prop) as props",
-                "groupArray(values) as values",
+                "groupArray(prop) AS props",
+                "groupArray(values) AS values",
             )
-            .group_by("dataset", "canonical_id", "schema")
-            .order_by(
-                "dataset", "canonical_id", "schema"
-            )  # make sure ordering to easier build entities later
+            .group_by("canonical_id", "schema")
+            .order_by("canonical_id", "schema")  # important for streaming
         )
 
-    def iterate(self, chunksize: Optional[int] = 1000) -> Iterator[E]:
+    def iterate(self, chunksize: Optional[int] = 1000) -> Iterator[CE]:
         # iterate in chunks, useful for huge bulk streaming performance
         q = self
         if q.limit is not None:
@@ -434,30 +440,6 @@ class EntityQuery(Query):
                 except StopIteration:
                     break  # to next chunk
 
-    def as_table(self):
-        def _unpack(serie: pd.Series) -> pd.Series:
-            return pd.Series([i for x in serie.values for i in x]).unique()
-
-        inner = super().get_query()
-        q = (
-            Query()
-            .select(
-                "dataset",
-                "canonical_id",
-                "schema",
-                "prop",
-                "groupUniqArray(value) as values",
-            )
-            .where(canonical_id__in=inner)
-            .group_by("dataset", "canonical_id", "schema", "prop")
-        )
-        df = self.driver.query_dataframe(str(q))
-        df = (
-            df.groupby(["dataset", "schema", "canonical_id", "prop"])
-            .agg({"values": _unpack})
-            .reset_index()
-        )
-        df = df.pivot(
-            ["dataset", "canonical_id", "schema"], "prop", "values"
-        ).reset_index()
-        return df
+    def first(self) -> CE:
+        res: CE = super().first()
+        return res

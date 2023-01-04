@@ -3,8 +3,8 @@ from typing import Iterable, Iterator, Optional
 
 import click
 from followthemoney import model
-from followthemoney.proxy import EntityProxy
 from followthemoney_typepredict.sampler import FastTextSampler
+from nomenklatura.entity import CE
 
 from .query import EntityQuery
 
@@ -27,7 +27,7 @@ class Sampler(FastTextSampler):
         super().close()
 
 
-def transform_proxy(proxy: EntityProxy, fields):
+def transform_proxy(proxy: CE, fields):
     if proxy.schema.name in SCHEMAS:
         yield from ((proxy.schema.name, value) for value in proxy.names)
 
@@ -40,7 +40,7 @@ def get_sampler(output_dir: click.Path) -> Sampler:
 
 def get_sample_entities(
     limit: Optional[int] = 1_000_000, datasets: Optional[Iterable[str]] = None
-) -> Iterator[EntityProxy]:
+) -> Iterator[CE]:
     q = EntityQuery()
     if datasets is not None and len(datasets):
         q = q.where(dataset__in=datasets)

@@ -1,48 +1,31 @@
-# https://github.com/opensanctions/opensanctions/blob/main/opensanctions/core/statements.py
 from datetime import datetime
 from functools import lru_cache
-from hashlib import sha1
-from typing import Iterator, Optional, TypedDict
+from typing import Any, Generator, Optional, TypedDict, TypeVar
 
-import fingerprints.generate
-from followthemoney import model
-from followthemoney.util import make_entity_id
-from libindic.soundex import Soundex
-from metaphone import doublemetaphone
+from followthemoney.namespace import Namespace
+from nomenklatura.statement import Statement
+from nomenklatura.statement import StatementDict as NKStatementDict
 
-SX = Soundex()
+from .phonetic import PhoneticAlgorithm, get_phonetics
+from .util import get_proxy
+
+SD = TypeVar("SD", bound="StatementDict")
+FS = TypeVar("FS", bound="FingerprintStatement")
 
 
-class Statement(TypedDict):
-    """A single statement about a property relevant to an entity.
-    For example, this could be useddocker to say: "In dataset A, entity X has the
-    property `name` set to 'John Smith'. I first observed this at K, and last
-    saw it at L."
-    Null property values are not supported. This might need to change if we
-    want to support making property-less entities.
-    """
-
-    id: str
-    dataset: str
+class StatementDict(NKStatementDict):
     origin: str
-    canonical_id: str
-    entity_id: str
-    schema: str
-    prop: str
-    prop_type: str
-    value: str
-    ts: datetime
-    sflag: Optional[str] = None
+    sstatus: str
 
 
-class Fingerprints(TypedDict):
+class Fingerprint(TypedDict):
     algorithm: str
     value: str
 
 
-class FingerprintStatement(Fingerprints):
+class FingerprintStatement(Fingerprint):
     """A statement describing fingerprints and phonetic algorithms for an
-    entity, useful for matching"""
+    entity, useful for pre-matching blocks"""
 
     dataset: str
     entity_id: str
@@ -50,45 +33,12 @@ class FingerprintStatement(Fingerprints):
 
 
 @lru_cache(1_000_000)
-def fingerprint(value: str) -> Fingerprints:
-    fingerprint = fingerprints.generate(value)
-    fingerprint_id = make_entity_id(fingerprint)
-    soundex = SX.soundex(value)
-    metaphone1, metaphone2 = doublemetaphone(value)
-    metaphone2 = metaphone2 or ""
-    fingerprint_id = make_entity_id(fingerprint)
-    fingerprint: Fingerprints = {
-        "algorithm": "fingerprint",
-        "value": fingerprint,
-    }
-    fingerprint_id: Fingerprints = {
-        "algorithm": "fingerprint_id",
-        "value": fingerprint_id,
-    }
-    soundex: Fingerprints = {"algorithm": "soundex", "value": soundex}
-    metaphone1: Fingerprints = {"algorithm": "metaphone1", "value": metaphone1}
-    metaphone2: Fingerprints = {"algorithm": "metaphone2", "value": metaphone2}
-    return [fingerprint, fingerprint_id, soundex, metaphone1, metaphone2]
-
-
-def stmt_key(
-    dataset: str,
-    entity_id: str,
-    prop: str,
-    value: str,
-    origin: Optional[str] = "",
-    **kwargs,
-) -> str:
-    """Hash the key properties of a statement record to make a unique ID."""
-    key = f"{dataset}.{origin}.{entity_id}.{prop}.{value}"
-    return sha1(key.encode("utf-8")).hexdigest()
-
-
-@lru_cache(100_000)
-def _denamespace(value: str | int) -> str:
-    # de-namespacing? #FIXME
-    value = str(value)
-    return value.rsplit(".", 1)[0]
+def fingerprint(value: str) -> list[Fingerprint]:
+    fingerprints: list[Fingerprint] = []
+    for algorithm in PhoneticAlgorithm:
+        for v in get_phonetics(value, algorithm.value):
+            fingerprints.append({"algorithm": algorithm.value, "value": v})
+    return fingerprints
 
 
 def statements_from_entity(
@@ -96,43 +46,25 @@ def statements_from_entity(
     dataset: str,
     origin: Optional[str] = "",
     canonical_id: Optional[str] = None,
-    sflag: Optional[str] = None,
-) -> Iterator[Statement]:
-    entity = model.get_proxy(entity)
-    if entity.id is None or entity.schema is None:
-        return []
-    entity_id = _denamespace(str(entity.id))
-    canonical_id = canonical_id or entity_id
-    stub: Statement = {
-        "id": stmt_key(dataset, origin, entity_id, "id", entity_id),
-        "dataset": dataset,
-        "canonical_id": canonical_id,
-        "entity_id": entity_id,
-        "schema": entity.schema.name,
-        "prop": "id",
-        "prop_type": "id",
-        "value": entity_id,
-        "ts": datetime.now(),
-        "sflag": sflag,
-    }
-    yield stub
-    for prop, value in entity.itervalues():
-        if value:
-            if prop.type.name == "entity":
-                value = _denamespace(value)
-            stmt: Statement = {
-                "id": stmt_key(dataset, origin, entity_id, prop.name, value),
-                "dataset": dataset,
+    status: Optional[str] = "",
+) -> Generator[SD, None, None]:
+    ns = Namespace()
+    ts = datetime.now()
+    proxy = get_proxy(entity)
+    proxy.datasets.add(dataset)
+    proxy = ns.apply(proxy)
+    canonical_id = canonical_id or proxy.id
+    for stmt in Statement.from_entity(proxy, dataset, first_seen=ts, last_seen=ts):
+        stmt: SD = {
+            **stmt.to_dict(),
+            **{
+                "origin": origin,
+                "sstatus": status,
                 "canonical_id": canonical_id,
-                "entity_id": entity_id,
-                "schema": entity.schema.name,
-                "prop": prop.name,
-                "prop_type": prop.type.name,
-                "value": value,
-                "ts": datetime.now(),
-                "sflag": sflag,
-            }
-            yield stmt
+            },
+        }
+        stmt["id"] = stmt_key(**stmt)
+        yield stmt
 
 
 def _should_fingerprint(entity):
@@ -140,40 +72,45 @@ def _should_fingerprint(entity):
         return False
     if entity.schema.is_a("Mention"):
         return True
-    return entity.schema.is_a("Thing")
+    return entity.schema.is_a("LegalEntity")
 
 
 def fingerprints_from_entity(
-    entity: dict, dataset: str
-) -> Iterator[FingerprintStatement]:
-    entity = model.get_proxy(entity)
+    entity: dict[str, Any], dataset: str
+) -> Generator[FS, None, None]:
+    ns = Namespace()
+    entity = get_proxy(entity)
+    entity = ns.apply(entity)
     if not _should_fingerprint(entity):
         return []
-    entity_id = _denamespace(entity.id)
     for prop, value in entity.itervalues():
         if value:
             if prop.type.name == "name":
-                fingerprints: [Fingerprints] = fingerprint(value)
+                fingerprints: list[Fingerprint] = fingerprint(value)
                 for fp in fingerprints:
                     if fp["value"]:
-                        stmt: FingerprintStatement = {
+                        stmt: FS = {
                             **{
                                 "dataset": dataset,
-                                "entity_id": entity_id,
+                                "entity_id": entity.id,
                                 "schema": entity.schema.name,
                                 "prop": prop.name,
+                                "prop_type": prop.type.name,
                             },
                             **fp,
                         }
                         yield stmt
 
 
+def stmt_key(**data) -> str:
+    return Statement.make_key(
+        data["dataset"],
+        data.get("canonical_id", data["entity_id"]),
+        data["prop"],
+        data["value"],
+        data.get("external"),
+    )
+
+
 COLUMNS = tuple(Statement.__annotations__.keys())
 COLUMNS_FPX = tuple(FingerprintStatement.__annotations__.keys())
-FPX_ALGORITHMS = (
-    "fingerprint",
-    "fingerprint_id",
-    "soundex",
-    "metaphone1",
-    "metaphone2",
-)

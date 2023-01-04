@@ -11,6 +11,7 @@ def get_env(name, default=None):
 
 DATABASE_URI = get_env("DATABASE_URI", "localhost")
 DATABASE_TABLE = get_env("DATABASE_TABLE", "ftm")
-LOG_LEVEL = get_env("LOG_LEVEL", "info")
+LOG_LEVEL = get_env("LOG_LEVEL", "INFO")
 LRU_QUERY_CACHE_SIZE = int(get_env("LRU_QUERY_CACHE_SIZE", 1024 * 1000))
 BULK_WRITE_SIZE = int(get_env("BULK_WRITE_SIZE", 100_000))
+SEARCH_LIMIT = int(get_env("SEARCH_LIMIT", 25))

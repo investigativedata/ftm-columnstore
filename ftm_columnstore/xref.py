@@ -1,4 +1,5 @@
-from typing import Generator, Iterable, Optional, Tuple, TypedDict
+from enum import Enum
+from typing import Generator, Iterable, Literal, Optional, Tuple, TypedDict
 
 from followthemoney.schema import Schema
 from nomenklatura.entity import CE
@@ -7,6 +8,18 @@ from nomenklatura.xref import xref as _run_xref
 
 from .dataset import Dataset
 from .nk import ClickhouseLoader
+from .phonetic import DEFAULT_PHONETIC_ALGORITHM, TPhoneticAlgorithm
+
+
+class OutputFormat(Enum):
+    nk = "nk"
+    csv = "csv"
+    entities = "entities"
+
+
+TOutputFormat = Literal[
+    OutputFormat.nk.value, OutputFormat.csv.value, OutputFormat.entities.value
+]
 
 
 class Match(TypedDict):
@@ -41,7 +54,7 @@ def run_xref(
     loader: ClickhouseLoader, **kwargs: NKxKwargs
 ) -> Generator[MemoryLoader, None, None]:
     for nk_loader in loader:
-        kwargs.pop("auto_threshold", None)  # FIXME
+        kwargs.pop("auto_threshold", None)  # FIXME nk score pass through?
         schema = kwargs.pop("schema", None)
         nk_kwargs: NKxKwargs = {**kwargs, **{"range": schema}}
         _run_xref(nk_loader, nk_loader.resolver, **nk_kwargs)
@@ -51,7 +64,7 @@ def run_xref(
 def xref_dataset(
     dataset: Dataset,
     schema: Optional[Schema] = None,
-    algorithm: Optional[str] = None,
+    algorithm: TPhoneticAlgorithm | None = DEFAULT_PHONETIC_ALGORITHM,
     **kwargs: NKxKwargs,
 ) -> Generator[MemoryLoader, None, None]:
     loader = ClickhouseLoader([dataset], schema=schema, algorithm=algorithm)
@@ -62,7 +75,7 @@ def xref_datasets(
     datasets: Iterable[Dataset],
     left_dataset: Optional[Dataset] = None,
     schema: Optional[Schema] = None,
-    algorithm: Optional[str] = None,
+    algorithm: TPhoneticAlgorithm | None = DEFAULT_PHONETIC_ALGORITHM,
     **kwargs: NKxKwargs,
 ) -> Generator[MemoryLoader, None, None]:
     loader = ClickhouseLoader(
