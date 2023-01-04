@@ -1,21 +1,21 @@
-# shorthands for import / export
+# shorthands for import
 
 import json
-from typing import Optional
+from typing import Union
 
 from followthemoney import model
 
-from ftm_columnstore.dataset import Dataset
-from ftm_columnstore.driver import ClickhouseDriver, get_driver
+from .dataset import DS, get_dataset
+from .driver import ClickhouseDriver, get_driver
+from .exceptions import DatasetException
 
 
 def import_json(
     fpath: str,
-    dataset: str,
-    with_fingerprints: Optional[bool] = True,
-    origin: Optional[str] = None,
-    driver: Optional[ClickhouseDriver] = None,
-    **kwargs
+    dataset: Union[str, DS],
+    origin: str | None = None,
+    driver: ClickhouseDriver | None = None,
+    **kwargs,
 ) -> int:
     """
     import a json file containing ftm entities, 1 entity per line without comma
@@ -24,14 +24,16 @@ def import_json(
     return: number of imported entities
     """
     driver = driver or get_driver()
-    dataset = Dataset(dataset, origin, driver, **kwargs)
-    bulk = dataset.bulk(with_fingerprints=with_fingerprints)
-    i = 0
-    with open(fpath) as f:
-        for line in f.readlines():
-            entity = json.loads(line)
-            entity = model.get_proxy(entity)  # validation
-            bulk.put(entity)
-            i += 1
-    bulk.flush()
-    return i
+    dataset = get_dataset(dataset, origin, driver, **kwargs)
+    if dataset.writable:
+        bulk = dataset.store.bulk()
+        i = 0
+        with open(fpath) as f:
+            for line in f.readlines():
+                entity = json.loads(line)
+                entity = model.get_proxy(entity)  # validation
+                bulk.put(entity)
+                i += 1
+        bulk.flush()
+        return i
+    raise DatasetException(f"Dataset `{dataset}` not writable.")

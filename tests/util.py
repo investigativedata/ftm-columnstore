@@ -25,6 +25,7 @@ class ClickhouseTestCase(TestCase):
         cls.driver.init(recreate=True)
         res = import_json(cls.data_file, "luanda_leaks")
         assert res == 852  # number of entities
+        cls.driver.optimize(full=True)
 
     @classmethod
     def tearDownClass(cls):

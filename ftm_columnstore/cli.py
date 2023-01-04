@@ -1,15 +1,16 @@
 import csv
-import json
 import logging
+import sys
 from pathlib import Path
 from typing import Iterable, Optional, Union
 
 import click
+import orjson
 from followthemoney.cli.cli import cli as main
 from followthemoney.cli.util import MAX_LINE, write_object
 
-from . import settings, statements, xref
-from .dataset import Dataset
+from . import exceptions, settings, statements, xref
+from .dataset import DS, get_dataset
 from .driver import get_driver
 from .nk import apply_nk
 from .util import clean_int
@@ -36,9 +37,9 @@ def _get_dataset(
     name: str,
     origin: Optional[str] = None,
     ignore_errors: Optional[bool] = False,
-) -> Dataset:
+) -> DS:
     driver = _get_driver(obj)
-    return Dataset(name, origin=origin, driver=driver, ignore_errors=ignore_errors)
+    return get_dataset(name, origin=origin, driver=driver, ignore_errors=ignore_errors)
 
 
 @click.group(help="Store FollowTheMoney object data in a column store (Clickhouse)")
@@ -70,26 +71,93 @@ def cli(ctx, log_level, uri, table):
     log.info(f"Using database driver: `{uri}` (table: `{table}`)")
 
 
-@cli.command("statements")
-@click.option("-i", "--infile", type=click.File("r"), default="-")
-@click.option("-o", "--outfile", type=click.File("w"), default="-")
-@click.option("-d", "--dataset", help="Dataset", required=True)
+@cli.command("init", help="Initialize database and table.")
 @click.option(
-    "--header/--no-header",
-    type=bool,
-    default=True,
-    help="Print header row or not",
+    "--recreate/--no-recreate",
+    help="Recreate database if it already exists.",
+    default=False,
     show_default=True,
 )
-def cli_statements(infile, outfile, dataset, header):
-    """Turn json entities from `infile` into statements in csv format"""
-    writer = csv.DictWriter(outfile, fieldnames=statements.COLUMNS)
-    if header:
-        writer.writeheader()
-    for data in readlines(infile):
-        data = json.loads(data)
-        for stmt in statements.statements_from_entity(data, dataset):
-            writer.writerow(stmt)
+@click.pass_obj
+def cli_init(obj, recreate):
+    driver = _get_driver(obj)
+    driver.init(recreate=recreate)
+
+
+@cli.command("write")
+@click.option("-i", "--infile", type=click.File("r"), default="-")
+@click.option("-d", "--dataset", help="dataset identifier", required=True)
+@click.option("-o", "--origin", default="bulk")
+@click.option(
+    "--ignore-errors/--no-ignore-errors",
+    type=bool,
+    default=False,
+    help="Don't fail on errors, only log them.",
+    show_default=True,
+)
+@click.option(
+    "--optimize/--dont-optimize",
+    type=bool,
+    default=True,
+    help="Optimize after import (should be disabled when writing parallel)",
+    show_default=True,
+)
+@click.pass_obj
+def cli_write(obj, infile, dataset, origin, ignore_errors, optimize):
+    """
+    Write json entities from `infile` to store.
+    """
+    dataset = _get_dataset(
+        obj,
+        dataset,
+        origin=origin,
+        ignore_errors=ignore_errors,
+    )
+
+    if dataset.writable:
+        bulk = dataset.store.bulk()
+        for line in readlines(infile):
+            entity = orjson.loads(line)
+            bulk.put(entity)
+        bulk.flush()
+        if optimize:
+            dataset.store.driver.optimize()
+    else:
+        raise click.ClickException(f"Dataset `{dataset}` not writable")
+
+
+@cli.command("iterate", help="Iterate entities")
+@click.option("-d", "--dataset", help="Dataset")
+@click.option("--origin")
+@click.option("-o", "--outfile", type=click.File("w"), default="-")
+@click.option("-s", "--schema", multiple=True, help="Schema(s)")
+@click.option("-l", "--limit", type=int, help="Stop after reaching this limit")
+@click.pass_obj
+def cli_iterate(obj, dataset, origin, outfile, schema, limit):
+    dataset = _get_dataset(obj, dataset, origin)
+    for entity in dataset.store.iterate(origin=origin, schema=schema, limit=limit):
+        write_object(outfile, entity)
+
+
+@cli.command("canonize", help="Add canonical ids for entities")
+@click.option("-i", "--infile", type=click.File("r"), default="-")
+@click.option("-d", "--dataset", help="dataset identifier", required=True)
+@click.pass_obj
+def cli_canonize(obj, infile, dataset):
+    """infile: csv format canonical_id,entity_id pairs per row"""
+    ds = _get_dataset(obj, dataset)
+    reader = csv.reader(infile)
+    ix = 0
+    for canonical_id, entity_id in reader:
+        try:
+            ds.store.canonize(entity_id, canonical_id)
+            ix += 1
+        except exceptions.EntityNotFound:
+            pass
+        if ix and ix % 1_000 == 0:
+            log.info(f"[{dataset}] Canonize entity {ix} ...")
+    ds.store.sync()
+    log.info(f"[{dataset}] Canonized {ix} entities.")
 
 
 @cli.command("fingerprints")
@@ -109,84 +177,9 @@ def cli_fingerprints(infile, outfile, dataset, header):
     if header:
         writer.writeheader()
     for data in readlines(infile):
-        data = json.loads(data)
+        data = orjson.loads(data)
         for stmt in statements.fingerprints_from_entity(data, dataset):
             writer.writerow(stmt)
-
-
-@cli.command("init", help="Initialize database and table.")
-@click.option(
-    "--recreate/--no-recreate",
-    help="Recreate database if it already exists.",
-    default=False,
-    show_default=True,
-)
-@click.pass_obj
-def cli_init(obj, recreate):
-    driver = _get_driver(obj)
-    driver.init(recreate=recreate)
-
-
-@cli.command("write")
-@click.option("-i", "--infile", type=click.File("r"), default="-")
-@click.option("-d", "--dataset", help="dataset identifier", required=True)
-@click.option("-o", "--origin", default="bulk")
-@click.option(
-    "--fingerprints/--no-fingerprints",
-    help="Populate fingerprints ix table",
-    default=True,
-    show_default=True,
-    type=bool,
-)
-@click.option(
-    "--ignore-errors/--no-ignore-errors",
-    type=bool,
-    default=False,
-    help="Don't fail on errors, only log them.",
-    show_default=True,
-)
-@click.pass_obj
-def cli_write(obj, infile, dataset, origin, fingerprints, ignore_errors):
-    """
-    Write json entities from `infile` to store.
-    """
-    dataset = _get_dataset(
-        obj,
-        dataset,
-        origin=origin,
-        ignore_errors=ignore_errors,
-    )
-
-    bulk = dataset.bulk(with_fingerprints=fingerprints)
-    for line in readlines(infile):
-        entity = json.loads(line)
-        bulk.put(entity)
-    bulk.flush()
-
-
-@cli.command("iterate", help="Iterate entities")
-@click.option("-d", "--dataset", help="Dataset")
-@click.option("--origin")
-@click.option("-o", "--outfile", type=click.File("w"), default="-")
-@click.option("-s", "--schema", multiple=True, help="Schema(s)")
-@click.option("-l", "--limit", type=int, help="Stop after reaching this limit")
-@click.pass_obj
-def cli_iterate(obj, dataset, origin, outfile, schema, limit):
-    dataset = _get_dataset(obj, dataset, origin)
-    for entity in dataset.iterate(origin=origin, schema=schema, limit=limit):
-        write_object(outfile, entity)
-
-
-@cli.command("canonize", help="Add canonical ids for entities")
-@click.option("-i", "--infile", type=click.File("r"), default="-")
-@click.option("-d", "--dataset", help="dataset identifier", required=True)
-@click.pass_obj
-def cli_canonize(obj, infile, dataset):
-    """infile: csv format canonical_id,entity_id pairs per row"""
-    dataset = _get_dataset(obj, dataset)
-    reader = csv.reader(infile)
-    for canonical_id, entity_id in reader:
-        dataset.canonize(entity_id, canonical_id)
 
 
 @cli.command("dump-statements", help="Dump all statements as csv")
@@ -208,7 +201,7 @@ def cli_dump_statements(obj, dataset, origin, outfile):
 @click.pass_obj
 def cli_delete(obj, dataset, origin):
     dataset = _get_dataset(obj, dataset, origin)
-    dataset.delete(origin=origin)
+    dataset.store.delete(origin=origin)
 
 
 @cli.command("list", help="List datasets in a store")
@@ -223,16 +216,33 @@ def cli_delete(obj, dataset, origin):
 @click.pass_obj
 def cli_list_datasets(obj, outfile, verbose):
     driver = _get_driver(obj)
-    q = f"SELECT distinct dataset FROM {driver.table}"
+    q = f"SELECT distinct dataset FROM {driver.view_stats}"
     if verbose:
         q = f"""SELECT dataset,
-        count(DISTINCT canonical_id) as entities,
-        count(*) AS statements
-        FROM {driver.table} GROUP BY dataset"""
+        countMerge(entities) AS entities,
+        countMerge(statements) AS statements
+        FROM {driver.view_stats}
+        GROUP BY dataset
+        """
     df = driver.query_dataframe(q)
-    df = df.set_index("dataset")
-    df.loc["__total__", :] = df.sum(numeric_only=True)
+    df = df.set_index("dataset").sort_index()
+    if verbose and len(df) > 1:
+        df.loc["__total__", :] = df.sum(numeric_only=True)
     df.applymap(clean_int).to_csv(outfile)
+
+
+@cli.command("get", help="Get a composite entity by id")
+@click.argument("id")
+@click.option("-d", "--datasets", help="Dataset(s)", multiple=True)
+@click.option("-o", "--origin")
+@click.pass_obj
+def cli_get(
+    obj, id: str, datasets: Iterable[str] | None = None, origin: str | None = None
+):
+    datasets = datasets or "*"
+    ds = _get_dataset(obj, datasets)
+    proxy = ds.store.get(id)
+    sys.stdout.write(orjson.dumps(proxy.to_dict()).decode())
 
 
 @cli.command("query", help="Execute raw query and print result (csv format) to outfile")
@@ -334,7 +344,11 @@ def cli_xref(
 
     if entities:
         for entity in xref.get_candidates(result, as_entities=True, **format_kwargs):
-            outfile.write(json.dumps(entity.to_dict()) + "\n")
+            outfile.write(
+                orjson.dumps(
+                    entity.to_dict(), option=orjson.OPT_APPEND_NEWLINE
+                ).decode()
+            )
         return
 
     if format_csv:
@@ -360,7 +374,7 @@ def cli_apply_nk(infile, outfile, auto_threshold):
 
     def _get_pairs():
         for line in readlines(infile):
-            canonical_id, entity_id, judgement, threshold, *rest = json.loads(line)
+            canonical_id, entity_id, judgement, threshold, *rest = orjson.loads(line)
             if auto_threshold is not None:
                 if (threshold or 0) > auto_threshold or judgement == "positive":
                     yield canonical_id, entity_id
@@ -373,13 +387,11 @@ def cli_apply_nk(infile, outfile, auto_threshold):
 
 
 @cli.command("optimize", help="run table optimization")
+@click.option("--full", type=click.BOOL, default=False, is_flag=True)
 @click.pass_obj
-def cli_optimize(obj):
+def cli_optimize(obj, full):
     driver = _get_driver(obj)
-    # FIXME FINAL
-    driver.execute(
-        f"OPTIMIZE TABLE {driver.table} DEDUPLICATE BY dataset,schema,canonical_id,entity_id,origin,prop,value"
-    )
+    driver.optimize(full)
 
 
 @cli.group("predict")

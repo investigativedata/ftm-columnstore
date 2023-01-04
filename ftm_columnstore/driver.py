@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from typing import Any, Iterable, Iterator, Optional
 
@@ -5,6 +6,8 @@ import pandas as pd
 from clickhouse_driver import Client, errors
 
 from . import settings
+
+log = logging.getLogger(__name__)
 
 
 def table_exists(e: Exception, table: str) -> bool:
@@ -26,6 +29,7 @@ class ClickhouseDriver:
         self.table_xref = f"{table}_xref"
         self.view_fpx_schemas = f"{table}_fpx_schemas"
         self.view_stats = f"{table}_stats"
+        self.view_fpx_freq = f"{table}_fpx_freq"
         self.uri = uri
         self.ensure_table()
 
@@ -48,6 +52,7 @@ class ClickhouseDriver:
                     or table_exists(e, self.table_xref)  # noqa
                     or table_exists(e, self.view_fpx_schemas)  # noqa
                     or table_exists(e, self.view_stats)  # noqa
+                    or table_exists(e, self.view_fpx_freq)  # noqa
                 ):
                     pass
                 else:
@@ -67,6 +72,7 @@ class ClickhouseDriver:
                 or table_exists(e, self.table_xref)  # noqa
                 or table_exists(e, self.view_fpx_schemas)  # noqa
                 or table_exists(e, self.view_stats)  # noqa
+                or table_exists(e, self.view_fpx_freq)  # noqa
             ):
                 pass
             else:
@@ -83,6 +89,7 @@ class ClickhouseDriver:
 
     def query(self, query: Any, *args, **kwargs) -> Iterator[Any]:
         query = str(query)
+        log.debug(query)
         conn = self.get_connection()
         kwargs = {**{"settings": {"max_block_size": 100000}}, **kwargs}
         return conn.execute_iter(query, *args, **kwargs)
@@ -92,6 +99,7 @@ class ClickhouseDriver:
 
     def query_dataframe(self, query: Any) -> pd.DataFrame:
         query = str(query)
+        log.debug(query)
         with self.get_connection() as conn:
             return conn.query_dataframe(query)
 
@@ -105,6 +113,7 @@ class ClickhouseDriver:
         return Client(settings={"use_numpy": True}, host=host, port=port[0])
 
     def execute(self, *args, **kwargs):
+        log.debug("\n".join(args))
         with self.get_connection() as conn:
             res = conn.execute(*args, **kwargs)
         return res
@@ -112,8 +121,16 @@ class ClickhouseDriver:
     def execute_iter(self, *args, **kwargs):
         return self.query(*args, **kwargs)
 
-    def sync(self):  # not guaranteed by clickhouse
+    def sync(self):  # somehow not guaranteed by clickhouse
         self.execute(f"OPTIMIZE TABLE {self.table} FINAL DEDUPLICATE")
+
+    def optimize(self, full: Optional[bool] = False):
+        for table in (self.view_stats, self.view_fpx_schemas, self.view_fpx_freq):
+            log.info(f"Optimizing `{table}` ...")
+            self.execute(f"OPTIMIZE TABLE {table} FINAL")
+        if full:
+            log.info(f"Optimizing `{self.table}` ...")
+            self.sync()
 
     @property
     def create_statements(self) -> Iterable[str]:
@@ -129,9 +146,20 @@ class ClickhouseDriver:
             `prop`                    LowCardinality(String),
             `prop_type`               LowCardinality(String),
             `value`                   String,
-            `ts`                      DateTime64,
-            `sflag`                   LowCardinality(String)
-        ) ENGINE = ReplacingMergeTree(ts)
+            `lang`                    LowCardinality(String),
+            `original_value`          Nullable(String),
+            `target`                  Nullable(Boolean),
+            `external`                Nullable(Boolean),
+            `first_seen`              DateTime64,
+            `last_seen`               DateTime64,
+            `sstatus`                 LowCardinality(String),
+            INDEX cix (canonical_id) TYPE set(0) GRANULARITY 4,
+            INDEX eix (entity_id) TYPE set(0) GRANULARITY 4,
+            INDEX six (schema) TYPE set(0) GRANULARITY 1,
+            INDEX oix (origin) TYPE set(0) GRANULARITY 4,
+            INDEX tix (prop_type) TYPE set(0) GRANULARITY 1,
+            INDEX pix (prop) TYPE set(0) GRANULARITY 1
+        ) ENGINE = ReplacingMergeTree(last_seen)
         PRIMARY KEY (dataset,schema,canonical_id)
         ORDER BY (dataset,schema,canonical_id,entity_id,origin,prop,value)
         """
@@ -143,8 +171,13 @@ class ClickhouseDriver:
             `entity_id`               String,
             `schema`                  LowCardinality(String),
             `prop`                    LowCardinality(String),
-            `algorithm`               LowCardinality(String),
-            `value`                   String
+            `prop_type`               LowCardinality(String),
+            `algorithm`               Enum('fingerprint', 'metaphone1', 'metaphone2', 'soundex'),
+            `value`                   String,
+            INDEX eix (entity_id) TYPE set(0) GRANULARITY 4,
+            INDEX six (schema) TYPE set(0) GRANULARITY 1,
+            INDEX tix (prop_type) TYPE set(0) GRANULARITY 1,
+            INDEX pix (prop) TYPE set(0) GRANULARITY 1
         ) ENGINE = ReplacingMergeTree()
         PRIMARY KEY (algorithm,value,prop,schema,dataset)
         ORDER BY (algorithm,value,prop,schema,dataset,entity_id)
@@ -172,27 +205,56 @@ class ClickhouseDriver:
         """
 
         create_view_fpx_schemas = f"""
-        CREATE MATERIALIZED VIEW {self.view_fpx_schemas}
-        ENGINE = AggregatingMergeTree() ORDER BY (algorithm, value, schema)
+        CREATE MATERIALIZED VIEW {self.view_fpx_schemas} (
+            algorithm       LowCardinality(String),
+            value           String,
+            schema          LowCardinality(String),
+            count           AggregateFunction(count, UInt32)
+        )
+        ENGINE = AggregatingMergeTree()
+        ORDER BY (algorithm, value, schema)
         AS SELECT
             algorithm,
             value,
             schema,
-            count(schema) AS schema_count
+            countState(schema) AS count
         FROM {self.table_fpx}
         GROUP BY algorithm, value, schema
         """
 
         create_view_stats = f"""
-        CREATE MATERIALIZED VIEW {self.view_stats}
-        ENGINE = AggregatingMergeTree() ORDER BY (dataset, schema)
+        CREATE MATERIALIZED VIEW {self.view_stats} (
+            dataset         LowCardinality(String),
+            schema          LowCardinality(String),
+            entities        AggregateFunction(count, UInt64),
+            statements      AggregateFunction(count, UInt64)
+        )
+        ENGINE = AggregatingMergeTree()
+        ORDER BY (dataset, schema)
         AS SELECT
             dataset,
             schema,
-            count(distinct canonical_id) AS entities,
-            count(*) AS statements
+            countState(distinct canonical_id) AS entities,
+            countState(*) AS statements
         FROM {self.table}
         GROUP BY dataset, schema
+        """
+
+        create_view_fpx_freq = f"""
+        CREATE MATERIALIZED VIEW {self.view_fpx_freq} (
+            value           String,
+            freq            AggregateFunction(count, UInt32),
+            len             UInt16
+        )
+        ENGINE = AggregatingMergeTree()
+        ORDER BY (value)
+        AS SELECT
+            value,
+            countState(value) AS freq,
+            length(value) AS len
+        FROM {self.table_fpx}
+        WHERE algorithm = 'fingerprint'
+        GROUP BY value
         """
 
         projections = (
@@ -209,8 +271,8 @@ class ClickhouseDriver:
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_prop (
                 SELECT * ORDER BY prop,schema,dataset)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_entities (
-                SELECT dataset,canonical_id,schema,prop,groupUniqArray(value) as values
-                GROUP BY dataset,canonical_id,schema,prop)""",
+                SELECT groupUniqArray(dataset) AS datasets,canonical_id,schema,prop,groupUniqArray(value) AS values
+                GROUP BY canonical_id,schema,prop)""",
             f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_value (
                 SELECT * ORDER BY value,schema,dataset)""",
             f"""ALTER TABLE {self.table_xref} ADD PROJECTION {self.table_xref}_reverse (
@@ -222,6 +284,7 @@ class ClickhouseDriver:
             create_table_xref,
             create_view_fpx_schemas,
             create_view_stats,
+            create_view_fpx_freq,
             *projections,
         )
 
@@ -233,6 +296,7 @@ class ClickhouseDriver:
             f"DROP TABLE IF EXISTS {self.table_xref}",
             f"DROP VIEW IF EXISTS {self.view_fpx_schemas}",
             f"DROP VIEW IF EXISTS {self.view_stats}",
+            f"DROP VIEW IF EXISTS {self.view_fpx_freq}",
         )
 
 

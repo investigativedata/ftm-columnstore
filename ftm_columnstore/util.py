@@ -5,8 +5,12 @@ from typing import Any, Iterable, Optional, Union
 
 import pandas as pd
 from click import File
+from followthemoney import model
+from followthemoney.proxy import E, EntityProxy
+from followthemoney.schema import Schema
+from nomenklatura.entity import CE, CompositeEntity
 
-log = logging.getLogger("ftm_columnstore")
+log = logging.getLogger(__name__)
 
 
 def read_csv(
@@ -77,3 +81,22 @@ def slicer(n: int, iterable: Iterable):
         if not chunk:
             return
         yield chunk
+
+
+def expand_schema(schema: str | Schema | None) -> set[Schema]:
+    if schema is None:
+        return
+    schema = model.get(schema)
+    schemata = schema.matchable_schemata
+    schemata.add(schema)
+    if not schema.matchable:
+        schemata.update(schema.descendants)
+    return schemata
+
+
+def get_proxy(data: CE | E | dict[str, Any]) -> CE:
+    if isinstance(data, CompositeEntity):
+        return data
+    if isinstance(data, EntityProxy):
+        data = data.to_dict()
+    return CompositeEntity.from_dict(model, data)

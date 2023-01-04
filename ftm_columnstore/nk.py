@@ -1,24 +1,17 @@
 import logging
-import uuid
-from typing import Generator, Iterable, Iterator, Optional
+from typing import Generator, Iterable
 
 import networkx as nx
-from followthemoney import model
 from followthemoney.schema import Schema
-from followthemoney.util import make_entity_id
-from nomenklatura.dataset import Dataset as NKDataset
-from nomenklatura.entity import CE, CompositeEntity
+from nomenklatura.entity import CE
 from nomenklatura.loader import MemoryLoader
 
 from .dataset import Dataset
-from .exceptions import InvalidAlgorithm
+from .phonetic import DEFAULT_PHONETIC_ALGORITHM, TPhoneticAlgorithm
 from .query import Query
-from .statements import FPX_ALGORITHMS
-from .util import slicer
+from .util import expand_schema, slicer
 
 log = logging.getLogger(__name__)
-
-DEFAULT_ALGORITHM = "metaphone1"
 
 
 class ClickhouseLoader:
@@ -27,28 +20,27 @@ class ClickhouseLoader:
     def __init__(
         self,
         datasets: Iterable[Dataset],
-        left_dataset: Optional[Dataset] = None,
-        schema: Optional[Schema] = None,
-        algorithm: Optional[str] = None,
+        left_dataset: Dataset | None = None,
+        schema: Schema | None = None,
+        algorithm: TPhoneticAlgorithm | None = DEFAULT_PHONETIC_ALGORITHM,
     ) -> None:
         self.datasets = datasets
         self.left_dataset = left_dataset
-        self.schema = schema
-        self.algorithm = algorithm or DEFAULT_ALGORITHM
-        self.driver = datasets[0].driver
+        self.schemata = expand_schema(schema)
+        self.algorithm = algorithm
+        self.driver = datasets[0].store.driver
 
     @property
     def dataset(self):
         if len(self.datasets) == 1:
-            name = self.datasets[0].name
-            title = name.title()
+            return self.datasets[0]
         else:
             name = ",".join(sorted([d.name for d in self.datasets]))
             title = f"Merged: {name}"
-        return NKDataset(name, title)
+            return Dataset(None, {"name": name, "title": title})
 
     def query_distinct_fingerprints(
-        self, dataset: Dataset, algorithm: Optional[str] = None
+        self, dataset: Dataset, algorithm: TPhoneticAlgorithm | None
     ) -> Query:
         algorithm = algorithm or self.algorithm
         return (
@@ -58,7 +50,9 @@ class ClickhouseLoader:
         )
 
     def get_query(
-        self, algorithm: Optional[str] = None, left_dataset: Optional[Dataset] = None
+        self,
+        algorithm: TPhoneticAlgorithm | None = None,
+        left_dataset: Dataset | None = None,
     ) -> Query:
         algorithm = algorithm or self.algorithm
         left_dataset = left_dataset or self.left_dataset
@@ -75,7 +69,7 @@ class ClickhouseLoader:
             .select(
                 "value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids"
             )
-            .where(prop="name", dataset__in=datasets, **algorithm_lookup)
+            .where(prop_type="name", dataset__in=datasets, **algorithm_lookup)
             .group_by("value")
             .having(
                 **{"length(datasets)__gt": int(len(datasets) > 1), "length(ids)__gt": 1}
@@ -83,49 +77,49 @@ class ClickhouseLoader:
         )
 
     def get_chunks(
-        self, algorithm: Optional[str] = None, left_dataset: Optional[Dataset] = None
-    ) -> Generator[Generator[CompositeEntity, None, None], None, None]:
+        self,
+        algorithm: TPhoneticAlgorithm | None = None,
+        left_dataset: Dataset | None = None,
+    ) -> Generator[Generator[CE, None, None], None, None]:
         algorithm = algorithm or self.algorithm
         left_dataset = left_dataset or self.left_dataset
-
-        if algorithm not in FPX_ALGORITHMS:
-            raise InvalidAlgorithm(algorithm)
 
         def _get_entities(entity_ids):
             for chunk in slicer(1_000, entity_ids):
                 for dataset in self.datasets:
-                    entities = dataset.EQ.where(entity_id__in=chunk, schema=self.schema)
-                    entities = (
-                        {**e.to_dict(), **{"datasets": [dataset.name]}}
-                        for e in entities
-                    )
-                    yield from (CompositeEntity.from_dict(model, e) for e in entities)
+                    q = dataset.store.EQ.where(entity_id__in=chunk)
+                    if self.schemata is not None:
+                        q = q.where(schema__in=[s.name for s in self.schemata])
+                    yield from q
 
         for row in self.get_query(algorithm, left_dataset):
+            log.info(f"Blocking chunk: `{algorithm}` = `{row[0]}`")
             entity_ids = row[2]
             yield _get_entities(entity_ids)
 
     def get_loaders(
-        self, algorithm: Optional[str] = None, left_dataset: Optional[Dataset] = None
+        self,
+        algorithm: TPhoneticAlgorithm | None = None,
+        left_dataset: Dataset | None = None,
     ):
         algorithm = algorithm or self.algorithm
         left_dataset = left_dataset or self.left_dataset
         for entities in self.get_chunks(algorithm, left_dataset):
             yield MemoryLoader(self.dataset, entities)
 
-    def __iter__(self) -> Iterator[CE]:
+    def __iter__(self) -> Generator[CE, None, None]:
         yield from self.get_loaders()
 
     def __repr__(self) -> str:
         return f"<ClickhouseLoader({self.driver}, {self.dataset})>"
 
 
-def apply_nk(items: Iterable[Iterable[str]]) -> Iterator[tuple[str, str]]:
+def apply_nk(items: Iterable[Iterable[str]]) -> Generator[tuple[str, str], None, None]:
     G = nx.Graph()
     for canonical_id, entity_id in items:
         G.add_edge(canonical_id, entity_id)
     for components in nx.connected_components(G):
-        canonical_id = make_entity_id(uuid.uuid4())
-        for entity_id in components:
-            if not entity_id.startswith("NK-"):
-                yield canonical_id, entity_id
+        ids = sorted(components, key=len, reverse=True)
+        canonical_id = ids.pop()
+        for entity_id in ids:
+            yield canonical_id, entity_id

@@ -1,5 +1,6 @@
 from ftm_columnstore.exceptions import InvalidQuery
 from ftm_columnstore.query import EntityQuery, Query
+
 from tests.util import ClickhouseTestCase
 
 
@@ -243,32 +244,32 @@ class QueryTestCase(ClickhouseTestCase):
         q = EntityQuery()
         self.assertEqual(
             str(q),
-            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE sflag = '') GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
+            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE sstatus = '') GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
         )
 
         # all filters etc. will be applied to the innerst query
         q = EntityQuery().where(canonical_id=1)
         self.assertEqual(
             str(q),
-            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE canonical_id = '1' AND sflag = '') GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
+            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE canonical_id = '1' AND sstatus = '') GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
         )
         q = EntityQuery().where(entity_id=1)
         self.assertEqual(
             str(q),
-            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE entity_id = '1' AND sflag = '') GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
+            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE entity_id = '1' AND sstatus = '') GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
         )
 
         q = EntityQuery()[:100]
         self.assertEqual(
             str(q),
-            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE sflag = '' LIMIT 0, 100) GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
+            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE sstatus = '' LIMIT 0, 100) GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
         )
 
         # make sure dataset is passed along
         q = EntityQuery().where(dataset__in=["luanda_leaks"])
         self.assertEqual(
             str(q),
-            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE dataset IN ('luanda_leaks') AND sflag = '') AND dataset IN ('luanda_leaks') GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
+            "SELECT arrayCompact(arrayFlatten(groupArray(datasets))) AS datasets, canonical_id, schema, groupArray(prop) AS props, groupArray(values) AS values FROM (SELECT groupUniqArray(dataset) AS datasets, canonical_id, schema, prop, groupUniqArray(value) AS values FROM ftm_columnstore_test WHERE canonical_id IN (SELECT DISTINCT canonical_id FROM ftm_columnstore_test WHERE dataset IN ('luanda_leaks') AND sstatus = '') AND dataset IN ('luanda_leaks') GROUP BY canonical_id, prop, schema) GROUP BY canonical_id, schema ORDER BY canonical_id, schema ASC",
         )
 
     def test_query_multiple_datasets(self):

@@ -1,6 +1,5 @@
-from tests.util import ClickhouseTestCase
-
 from ftm_columnstore import get_dataset, nk, xref
+from tests.util import ClickhouseTestCase
 
 
 class XrefTestCase(ClickhouseTestCase):
@@ -13,10 +12,10 @@ class XrefTestCase(ClickhouseTestCase):
         query = loader.get_query()
         self.assertEqual(
             str(query),
-            "SELECT value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset IN ('luanda_leaks') AND prop = 'name' AND value <> '' GROUP BY value HAVING length(datasets) > '0' AND length(ids) > '1'",
+            "SELECT value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset IN ('luanda_leaks') AND prop_type = 'name' AND value <> '' GROUP BY value HAVING length(datasets) > '0' AND length(ids) > '1'",
         )
         blocks = [x for x in query]
-        self.assertEqual(len(blocks), 3)
+        self.assertEqual(len(blocks), 46)
         chunk = next(loader.get_chunks(left_dataset=ds))
         self.assertEqual(len([e for e in chunk]), 2)
 
@@ -32,7 +31,7 @@ class XrefTestCase(ClickhouseTestCase):
         query = loader.get_query()
         self.assertEqual(
             str(query),
-            "SELECT value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset IN ('luanda_leaks', 'empty_dataset') AND prop = 'name' AND value <> '' AND value IN (SELECT DISTINCT value FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset = 'luanda_leaks') GROUP BY value HAVING length(datasets) > '1' AND length(ids) > '1'",
+            "SELECT value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset IN ('luanda_leaks', 'empty_dataset') AND prop_type = 'name' AND value <> '' AND value IN (SELECT DISTINCT value FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset = 'luanda_leaks') GROUP BY value HAVING length(datasets) > '1' AND length(ids) > '1'",
         )
         self.assertRaises(
             StopIteration,
@@ -45,7 +44,7 @@ class XrefTestCase(ClickhouseTestCase):
         query = loader.get_query()
         self.assertEqual(
             str(query),
-            "SELECT value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset IN ('luanda_leaks', 'empty_dataset', 'empty_dataset2') AND prop = 'name' AND value <> '' GROUP BY value HAVING length(datasets) > '1' AND length(ids) > '1'",
+            "SELECT value, groupUniqArray(dataset) AS datasets, groupUniqArray(entity_id) AS ids FROM ftm_columnstore_test_fpx WHERE algorithm = 'metaphone1' AND dataset IN ('luanda_leaks', 'empty_dataset', 'empty_dataset2') AND prop_type = 'name' AND value <> '' GROUP BY value HAVING length(datasets) > '1' AND length(ids) > '1'",
         )
         self.assertRaises(
             StopIteration, lambda: next(xref.xref_datasets([left_dataset, ds, ds2]))
