@@ -304,6 +304,7 @@ class WriteStore(Store):
         origin: str | None = None,
         sync: bool | None = False,
     ):
+        # FIXME need to update ftm stats view here
         q = self.Q
         filtered = False
         if canonical_id is not None:
