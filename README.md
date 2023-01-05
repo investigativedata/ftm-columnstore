@@ -11,6 +11,8 @@ with a huge performance benefit on writing and querying data.
 
 `FtM` data is stored in one table in [statements](#statements) format.
 
+**Minimum Python version: 3.10**
+
 ## Usage
 
 Set up a running clickhouse instance (pointed to via `DATABASE_URI` env var,
