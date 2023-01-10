@@ -291,11 +291,13 @@ class WriteStore(Store):
     def drop(self, sync: bool | None = False):
         log.info("Dropping ftm-store: %s" % self.dataset)
         where = self.Q.where_part
-        stmt = f"ALTER TABLE {self.driver.table} DELETE {where}"
-        res = self._execute(stmt)
+        for stmt in (
+            f"ALTER TABLE {self.driver.table} DELETE {where}",
+            f"ALTER TABLE {self.driver.view_stats} DELETE {where}",
+        ):
+            self._execute(stmt)
         if sync:
             self.driver.sync()
-        return res
 
     def delete(
         self,
