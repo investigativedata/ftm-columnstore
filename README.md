@@ -11,6 +11,8 @@ with a huge performance benefit on writing and querying data.
 
 `FtM` data is stored in one table in [statements](#statements) format.
 
+**Minimum Python version: 3.10**
+
 ## Usage
 
 Set up a running clickhouse instance (pointed to via `DATABASE_URI` env var,
@@ -20,32 +22,30 @@ default: `localhost`), for developing purposes this could work:
 
 Then initialize the required table schema:
 
-    ftm cstore init
+    ftmcs init
 
 Or drop existing data and recreate:
 
-    ftm cstore init --recreate
+    ftmcs init --recreate
 
 To test if it's working, run a raw query:
 
-    ftm cstore query "SHOW TABLES"
+    ftmcs query "SHOW TABLES"
 
 When using the `make clickhouse` command, you can play around with SQL queries
 in your browser: http://127.0.0.1:8123/play
 
 ### Command-line usage
 
-(`ftm store` becomes `ftm cstore`)
-
 ```bash
 # Insert a bunch of FtM entities into a store:
-cat ftm-entities.ijson | ftm cstore write -d my_dataset
+cat ftm-entities.ijson | ftmcs write -d my_dataset
 # Re-create the entities in aggregated form:
-ftm cstore iterate -d my_dataset | alephclient write-entities -f my_dataset
+ftmcs iterate -d my_dataset | alephclient write-entities -f my_dataset
 ```
 
 ```
-Usage: ftm cstore [OPTIONS] COMMAND [ARGS]...
+Usage: ftmcs [OPTIONS] COMMAND [ARGS]...
 
   Store FollowTheMoney object data in a column store (Clickhouse)
 
@@ -67,40 +67,24 @@ Commands:
   write         Write json entities from `infile` to store.
 ```
 
-#### statements
-
-Under the hood, `FtM` entities are converted to statements, which is possible
-via the command line too:
-
-    cat entities.ijson | ftm cstore flatten > statements.csv
-
-#### fingerprints
-
-Additionally write fingerprints for entity props with type
-[`name`](https://followthemoney.readthedocs.io/en/latest/types.html#name) to a
-dedicated fingerprint index, usable for very fast lookups:
-
-    cat entities.ijson | ftm cstore write -d my_dataset --fingerprints
-
-
 ### Python Library
 
 ```python
-from ftm_columnstore import Dataset
+from ftm_columnstore import get_dataset
 
-dataset = Dataset("US-OFAC")
-dataset.put(entity)
+dataset = get_dataset("us-ofac")
+dataset.store.put(entity)
 
-entity = dataset.get("entity-id")
+entity = dataset.store.get("entity-id")
 ```
 
 Bulk writer behaves the same like in [`followthemoney-store`](https://github.com/alephdata/followthemoney):
 
 ```python
-from ftm_columnstore import Dataset
+from ftm_columnstore import get_dataset
 
-dataset = Dataset("US-OFAC")
-bulk = dataset.bulk(with_fingerprints=True)
+dataset = get_dataset("us-ofac")
+bulk = dataset.store.bulk()
 
 for entity in many_entities:
   bulk.put(entity)
@@ -144,7 +128,7 @@ All tests run on the same Dell XPS Laptop, 16 GB, 11th Gen Intel(R) Core(TM) i7-
 `ftm-columnstore`: 99s
 
 ```bash
-date +"%H:%M:%S" ; ftm cstore write -d opensanctions -i opensanctions.ftm.ijson ; date +"%H:%M:%S"
+date +"%H:%M:%S" ; ftmcs write -d opensanctions -i opensanctions.ftm.ijson ; date +"%H:%M:%S"
 15:44:51
 ftm_columnstore.dataset [INFO] [opensanctions] Write: 100000 entities with 532100 statements.
 # ...
@@ -176,7 +160,7 @@ date +"%H:%M:%S" ; ftm store iterate -d opensanctions > /dev/null ; date +"%H:%M
 `ftm-columnstore`: 87s
 
 ```bash
-date +"%H:%M:%S" ; ftm cstore iterate -d opensanctions > /dev/null ; date +"%H:%M:%S"
+date +"%H:%M:%S" ; ftmcs iterate -d opensanctions > /dev/null ; date +"%H:%M:%S"
 15:49:27
 15:50:54
 ```

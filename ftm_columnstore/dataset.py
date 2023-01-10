@@ -4,84 +4,21 @@ import logging
 from functools import lru_cache
 from typing import Any, Generator, Iterable
 
-import pandas as pd
 from banal import is_listish
 from nomenklatura.dataset import DataCatalog as NKDataCatalog
 from nomenklatura.dataset import Dataset as NKDataset
 from nomenklatura.entity import CE
 
-from . import settings
 from .driver import ClickhouseDriver, get_driver
 from .query import Query
-from .statements import Statement, fingerprints_from_entity, statements_from_entity
+from .statements import Statement
 from .store import Store, WriteStore
-from .util import handle_error
 
 log = logging.getLogger(__name__)
 
 Entities = Generator[CE, None, None]
 Statements = Generator[Statement, None, None]
 DS = "DataCatalog | Dataset"
-
-
-class BulkWriter:
-    def __init__(
-        self,
-        dataset: Dataset,
-        origin: str | None = None,
-        table: str | None = None,
-        size: int | None = settings.BULK_WRITE_SIZE,
-        ignore_errors: bool | None = False,
-    ) -> None:
-        self.dataset = dataset
-        self.origin = origin or dataset.origin
-        self.table = table or dataset.driver.table
-        self.buffer = []
-        self.size = size
-        self.ignore_errors = ignore_errors
-
-    def put(self, statement: Statement) -> None:
-        self.buffer.append(statement)
-        if len(self.buffer) % self.size == 0:
-            self.flush()
-
-    def flush(self) -> int | None:
-        if not len(self.buffer):
-            return
-        try:
-            df = pd.DataFrame(self.buffer)
-            df["origin"] = self.origin
-            res = self.dataset.driver.insert(df, table=self.table)
-            log.info(f"[{self.dataset}] Write: {len(self.buffer)} statements.")
-            self.buffer = []
-            return res
-        except Exception as e:
-            handle_error(log, e, not self.ignore_errors)
-
-
-class EntityBulkWriter(BulkWriter):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        # FIXME this is a bit hacky, having sub writers instances...
-        kwargs["table"] = self.dataset.driver.table_fpx
-        self.bulk_fpx = BulkWriter(*args, **kwargs)
-
-    def put(self, entity: dict[str, Any] | CE):
-        if hasattr(entity, "to_dict"):
-            entity = entity.to_dict()
-        else:
-            entity = dict(entity)
-        for statement in statements_from_entity(
-            entity, self.dataset.name, self.dataset.origin
-        ):
-            super().put(statement)
-        # write fingerprints
-        for statement in fingerprints_from_entity(entity, self.dataset.name):
-            self.bulk_fpx.put(statement)
-
-    def flush(self):
-        self.bulk_fpx.flush()
-        return super().flush()
 
 
 class Dataset(NKDataset):

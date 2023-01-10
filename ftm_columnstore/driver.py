@@ -27,7 +27,6 @@ class ClickhouseDriver:
         self.table = table
         self.table_fpx = f"{table}_fpx"
         self.table_xref = f"{table}_xref"
-        self.view_fpx_schemas = f"{table}_fpx_schemas"
         self.view_stats = f"{table}_stats"
         self.view_fpx_freq = f"{table}_fpx_freq"
         self.uri = uri
@@ -50,7 +49,6 @@ class ClickhouseDriver:
                     table_exists(e, self.table)
                     or table_exists(e, self.table_fpx)  # noqa
                     or table_exists(e, self.table_xref)  # noqa
-                    or table_exists(e, self.view_fpx_schemas)  # noqa
                     or table_exists(e, self.view_stats)  # noqa
                     or table_exists(e, self.view_fpx_freq)  # noqa
                 ):
@@ -70,7 +68,6 @@ class ClickhouseDriver:
                 table_exists(e, self.table)
                 or table_exists(e, self.table_fpx)  # noqa
                 or table_exists(e, self.table_xref)  # noqa
-                or table_exists(e, self.view_fpx_schemas)  # noqa
                 or table_exists(e, self.view_stats)  # noqa
                 or table_exists(e, self.view_fpx_freq)  # noqa
             ):
@@ -125,7 +122,7 @@ class ClickhouseDriver:
         self.execute(f"OPTIMIZE TABLE {self.table} FINAL DEDUPLICATE")
 
     def optimize(self, full: Optional[bool] = False):
-        for table in (self.view_stats, self.view_fpx_schemas, self.view_fpx_freq):
+        for table in (self.view_stats, self.view_fpx_freq):
             log.info(f"Optimizing `{table}` ...")
             self.execute(f"OPTIMIZE TABLE {table} FINAL")
         if full:
@@ -204,24 +201,6 @@ class ClickhouseDriver:
         ORDER BY (left_dataset,left_schema,left_id,right_dataset,right_schema,right_id)
         """
 
-        create_view_fpx_schemas = f"""
-        CREATE MATERIALIZED VIEW {self.view_fpx_schemas} (
-            algorithm       LowCardinality(String),
-            value           String,
-            schema          LowCardinality(String),
-            count           AggregateFunction(count, UInt32)
-        )
-        ENGINE = AggregatingMergeTree()
-        ORDER BY (algorithm, value, schema)
-        AS SELECT
-            algorithm,
-            value,
-            schema,
-            countState(schema) AS count
-        FROM {self.table_fpx}
-        GROUP BY algorithm, value, schema
-        """
-
         create_view_stats = f"""
         CREATE MATERIALIZED VIEW {self.view_stats} (
             dataset         LowCardinality(String),
@@ -282,7 +261,6 @@ class ClickhouseDriver:
             create_table,
             create_table_fpx,
             create_table_xref,
-            create_view_fpx_schemas,
             create_view_stats,
             create_view_fpx_freq,
             *projections,
@@ -294,7 +272,6 @@ class ClickhouseDriver:
             f"DROP TABLE IF EXISTS {self.table}",
             f"DROP TABLE IF EXISTS {self.table_fpx}",
             f"DROP TABLE IF EXISTS {self.table_xref}",
-            f"DROP VIEW IF EXISTS {self.view_fpx_schemas}",
             f"DROP VIEW IF EXISTS {self.view_stats}",
             f"DROP VIEW IF EXISTS {self.view_fpx_freq}",
         )
