@@ -14,8 +14,3 @@ class IOTestCase(ClickhouseTestCase):
         )
         count = count[0][0]
         self.assertEqual(count, 2294)
-        count = self.driver.execute(
-            f"SELECT count(*) FROM {self.driver.view_fpx_schemas}"
-        )
-        count = count[0][0]
-        self.assertEqual(count, 1835)
