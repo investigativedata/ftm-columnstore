@@ -45,6 +45,8 @@ class NKxKwargs(TypedDict):
     adjacent: bool = False
     auto_threshold: Optional[float] = None
     user: Optional[str] = None
+    dataset: Optional[str] = None
+    force_other: Optional[str] = False
 
 
 MATCH_COLUMNS = tuple(Match.__annotations__.keys())

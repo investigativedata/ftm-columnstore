@@ -260,12 +260,12 @@ def cli_query(obj, query, outfile):
 @click.option("-d", "--datasets", help="Dataset(s)", multiple=True)
 @click.option("--origin")
 @click.option("-a", "--auto-threshold", type=click.FLOAT, default=None)
-@click.option("-s", "--schema", help="Limit to specific ftm Schema", default=None)
+@click.option("-s", "--schema", help="Limit to specific Schema", default=None)
 @click.option("-l", "--limit", type=click.INT, default=100_000)
 @click.option(
     "--algorithm",
     help="Metaphone algorithm to create candidate chunks",
-    default="metaphone1",
+    default="fingerprint",
 )
 @click.option("--scored/--unscored", is_flag=True, type=click.BOOL, default=True)
 @click.option("-o", "--outfile", type=click.File("w"), default="-")
@@ -323,12 +323,14 @@ def cli_xref(
 
     if dataset is not None:
         dataset = _get_dataset(obj, dataset, origin)
+        xkwargs["dataset"] = str(dataset)
         # we have a base dataset
         if not len(datasets):
             # perform dataset against itself
             result = xref.xref_dataset(dataset, **xkwargs)
         else:
             # perform dataset against others
+            xkwargs["force_other"] = True
             datasets.append(dataset)
             format_kwargs["left_dataset"] = str(dataset)
             format_kwargs["min_datasets"] = 2
