@@ -52,6 +52,7 @@ def statements_from_entity(
     ts = datetime.now()
     proxy = get_proxy(entity)
     proxy.datasets.add(dataset)
+    proxy.id = proxy.id.rstrip("-")  # FIXME? namespace.sign returns None otherwise!
     proxy = ns.apply(proxy)
     canonical_id = canonical_id or proxy.id
     for stmt in Statement.from_entity(proxy, dataset, first_seen=ts, last_seen=ts):
