@@ -33,7 +33,7 @@ DEFAULT_PHONETIC_ALGORITHM = PhoneticAlgorithm.metaphone1.value
 def tokenize(value: str) -> set[str]:
     tokens = set()
     tokens.add(value)
-    tokens.update([t for t in value.split(WS) if len(t) > 9])  # FIXME
+    tokens.update([t for t in value.split(WS) if len(t) > 5])  # FIXME
     return tokens
 
 

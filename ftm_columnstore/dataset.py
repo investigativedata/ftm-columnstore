@@ -38,6 +38,9 @@ class Dataset(NKDataset):
             self.name, driver or get_driver(), origin, ignore_errors
         )
 
+    def __str__(self) -> str:
+        return self.name
+
     @classmethod
     def from_name(
         cls,
@@ -61,6 +64,9 @@ class DataCatalog(NKDataCatalog):
     ) -> None:
         super().__init__(Dataset, data)
         self.store = Store(self.names, driver or get_driver(), origin, ignore_errors)
+
+    def __str__(self) -> str:
+        return ",".join(self.names)
 
     @classmethod
     def from_names(
