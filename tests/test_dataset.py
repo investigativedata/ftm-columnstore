@@ -164,3 +164,30 @@ class DatasetTestCase(ClickhouseTestCase):
         ds.drop(sync=True)
         entities = [e for e in ds]
         self.assertEqual(len(entities), 0)
+
+    def test_dataset_pivot(self):
+        ds = get_dataset("luanda_leaks")
+        res = [x for x in ds.store.pivot(["Person"], ["name"])]
+        self.assertSequenceEqual(
+            res,
+            [
+                {
+                    "name": {"Both"},
+                    "canonical_id": "dac512be3717d18f079e5274565002586f45b75d",
+                    "schema": {"Person"},
+                    "dataset": {"luanda_leaks"},
+                },
+                {
+                    "name": {"Sindika Dokolo"},
+                    "canonical_id": "2efaa3a3a6d8119209b66f6f09010caf54299474",
+                    "schema": {"Person"},
+                    "dataset": {"luanda_leaks"},
+                },
+                {
+                    "name": {"Isabel dos Santos"},
+                    "canonical_id": "dfa01f04a87a4ce0f1e0f96a85d260a3249ab64a",
+                    "schema": {"Person"},
+                    "dataset": {"luanda_leaks"},
+                },
+            ],
+        )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from functools import cached_property
 from typing import Any, Generator, Iterable
 
@@ -178,6 +179,34 @@ class Store:
         if limit is not None:
             q = q[:limit]
         yield from q.iterate(chunksize=chunksize)
+
+    def pivot(
+        self, schemas: Iterable[str], props: Iterable[str], to_str: bool | None = False
+    ) -> Generator[dict[str, Any], None, None]:
+        q = (
+            self.Q.select(
+                "canonical_id, groupUniqArray(dataset), groupUniqArray(schema), groupArray(prop), groupArray(value)"
+            )
+            .where(prop__in=props)
+            .group_by("canonical_id")
+        )
+        if len(schemas):
+            q = q.where(schema__in=schemas)
+
+        for canonical_id, datasets, schemas, props, values in q.iterate():
+            data = defaultdict(set)
+            datasets = set(datasets)
+            schemas = set(schemas)
+            for prop, value in zip(props, values):
+                data[prop].add(value)
+            if to_str:
+                data = {k: ";".join(v) for k, v in data.items()}
+                schemas = ";".join(sorted(schemas))
+                datasets = ";".join(sorted(datasets))
+            data["canonical_id"] = canonical_id
+            data["schema"] = schemas
+            data["dataset"] = datasets
+            yield dict(data)
 
     def statements(self, origin: str | None = None) -> Statements:
         origin = origin or self.origin

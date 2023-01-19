@@ -125,6 +125,33 @@ def cli_write(obj, infile, dataset, origin, id_prefix, ignore_errors, optimize):
         raise click.ClickException(f"Dataset `{dataset}` not writable")
 
 
+@cli.command("pivot", help="Stream pivoted output with props as columns")
+@click.option("-d", "--datasets", help="Dataset(s)", multiple=True, default=[])
+@click.option("--origin")
+@click.option("-s", "--schemas", multiple=True, help="Schema(s)", default=[])
+@click.option("-p", "--props", multiple=True, help="Prop(s)", required=True)
+@click.option("-o", "--outfile", type=click.File("w"), default="-")
+@click.pass_obj
+def cli_pivot(obj, datasets, origin, schemas, props, outfile):
+    """
+    Example:
+
+        ftmcs stream-csv -d my_dataset -s Person -p name -p birthDate
+
+    will result in csv:
+
+        canonical_id,dataset,schema,name,birthDate
+        id-1,my_dataset,Person,Alice,1981-05-29
+    """
+    writer = csv.DictWriter(
+        outfile, fieldnames=["canonical_id", "dataset", "schema", *props]
+    )
+    writer.writeheader()
+    dataset = _get_dataset(obj, datasets or "*", origin)
+    for row in dataset.store.pivot(schemas, props, to_str=True):
+        writer.writerow(row)
+
+
 @cli.command("iterate", help="Iterate entities")
 @click.option("-d", "--dataset", help="Dataset")
 @click.option("--origin")
@@ -140,7 +167,7 @@ def cli_iterate(obj, dataset, origin, outfile, schema, limit):
 
 @cli.command("canonize", help="Add canonical ids for entities")
 @click.option("-i", "--infile", type=click.File("r"), default="-")
-@click.option("-d", "--dataset", help="dataset identifier", required=True)
+@click.option("-d", "--dataset", help="Dataset", required=True)
 @click.pass_obj
 def cli_canonize(obj, infile, dataset):
     """infile: csv format canonical_id,entity_id pairs per row"""
