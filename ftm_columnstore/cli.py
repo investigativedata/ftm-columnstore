@@ -1,12 +1,10 @@
 import csv
 import logging
 import sys
-from pathlib import Path
 from typing import Iterable, Optional, Union
 
 import click
 import orjson
-from followthemoney.cli.cli import cli as main
 from followthemoney.cli.util import MAX_LINE, write_object
 
 from . import exceptions, settings, statements, xref
@@ -16,8 +14,6 @@ from .nk import apply_nk
 from .util import clean_int
 
 log = logging.getLogger(__name__)
-
-ResPath = click.Path(dir_okay=False, writable=True, path_type=Path)
 
 
 def readlines(stream):
@@ -88,6 +84,7 @@ def cli_init(obj, recreate):
 @click.option("-i", "--infile", type=click.File("r"), default="-")
 @click.option("-d", "--dataset", help="dataset identifier", required=True)
 @click.option("-o", "--origin", default="bulk")
+@click.option("--id-prefix", help="Add this prefix to all ids", default=None)
 @click.option(
     "--ignore-errors/--no-ignore-errors",
     type=bool,
@@ -103,7 +100,7 @@ def cli_init(obj, recreate):
     show_default=True,
 )
 @click.pass_obj
-def cli_write(obj, infile, dataset, origin, ignore_errors, optimize):
+def cli_write(obj, infile, dataset, origin, id_prefix, ignore_errors, optimize):
     """
     Write json entities from `infile` to store.
     """
@@ -118,6 +115,8 @@ def cli_write(obj, infile, dataset, origin, ignore_errors, optimize):
         bulk = dataset.store.bulk()
         for line in readlines(infile):
             entity = orjson.loads(line)
+            if id_prefix is not None:
+                entity["id"] = f'{id_prefix}-{entity["id"]}'
             bulk.put(entity)
         bulk.flush()
         if optimize:
@@ -423,7 +422,3 @@ def predict_create_training_data(
     with predict.get_sampler(output_dir) as sampler:
         for proxy in predict.get_sample_entities(limit, datasets):
             sampler.add_entity(proxy)
-
-
-# Register with main FtM command-line tool.
-main.add_command(cli, name="cstore")
