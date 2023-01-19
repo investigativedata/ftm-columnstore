@@ -26,7 +26,7 @@ TPhoneticAlgorithm = Literal[
     PhoneticAlgorithm.soundex.value,
 ]
 
-DEFAULT_PHONETIC_ALGORITHM = PhoneticAlgorithm.metaphone1.value
+DEFAULT_PHONETIC_ALGORITHM = PhoneticAlgorithm.fingerprint.value
 
 
 @lru_cache(10_000_000)
