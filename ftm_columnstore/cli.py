@@ -40,12 +40,6 @@ def _get_dataset(
 
 @click.group(help="Store FollowTheMoney object data in a column store (Clickhouse)")
 @click.option(
-    "--log-level",
-    default=settings.LOG_LEVEL,
-    help="Set logging level",
-    show_default=True,
-)
-@click.option(
     "--uri",
     help="Database connection URI",
     default=settings.DATABASE_URI,
@@ -58,11 +52,10 @@ def _get_dataset(
     show_default=True,
 )
 @click.pass_context
-def cli(ctx, log_level, uri, table):
+def cli(ctx, uri, table):
     """
     FtM Columnstore implementation (Clickhouse)
     """
-    logging.basicConfig(level=log_level)
     ctx.obj = {"uri": uri, "table": table}
     log.info(f"Using database driver: `{uri}` (table: `{table}`)")
 
