@@ -4,7 +4,8 @@ RUN apt-get update && apt-get -y upgrade
 
 COPY ftm_columnstore /app/ftm_columnstore
 COPY setup.py /app/setup.py
-COPY setup.cfg /app/setup.cfg
+COPY README.md /app/README.md
+COPY pyproject.toml /app/pyproject.toml
 COPY VERSION /app/VERSION
 
 WORKDIR /app
