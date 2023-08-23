@@ -6,6 +6,7 @@ from ftmq.model.dataset import C, Dataset
 from ftmq.store import SQLQueryView, Store
 from nomenklatura import store as nk
 from nomenklatura.dataset import DS
+from nomenklatura.db import get_metadata
 from nomenklatura.entity import CE
 from nomenklatura.resolver import Resolver
 from nomenklatura.statement import Statement, make_statement_table
@@ -78,6 +79,7 @@ def get_store(
     catalog: C | None = None,
     dataset: Dataset | str | None = None,
 ) -> Store:
+    get_metadata.cache_clear()
     if isinstance(dataset, str):
         dataset = Dataset(name=dataset)
     return ClickhouseStore(catalog, dataset, uri=uri)
