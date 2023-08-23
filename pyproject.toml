@@ -2,12 +2,12 @@
 name = "ftm-columnstore"
 version = "0.1.1"
 description = "Column store implementation for ftm data based on clickhouse"
-authors = ["Simon Wörpel <simon.woerpel@pm.me>"]
+authors = ["Simon Wörpel <simon@investigativedata.org>"]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/simonwoerpel/ftm-columnstore"
-repository = "https://github.com/simonwoerpel/ftm-columnstore"
-documentation = "https://github.com/simonwoerpel/ftm-columnstore"
+homepage = "https://github.com/investigativedata/ftm-columnstore"
+repository = "https://github.com/investigativedata/ftm-columnstore"
+documentation = "https://github.com/investigativedata/ftm-columnstore"
 classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
@@ -20,21 +20,21 @@ packages = [{include = "ftm_columnstore"}]
 ftmcs = "ftm_columnstore.cli:cli"
 
 [tool.poetry.urls]
-"Bug Tracker" = "https://github.com/simonwoerpel/ftm-columnstore/issues"
+"Bug Tracker" = "https://github.com/investigativedata/ftm-columnstore/issues"
 
 
 [tool.poetry.dependencies]
-python = ">=3.11,<4"
+python = ">=3.11,<3.13"
 banal = "^1.0.6"
 typer = "^0.9.0"
 clickhouse-driver = {extras = ["numpy"], version = "^0.2.6"}
-nomenklatura = "^3.3.8"
 orjson = "^3.9.4"
 pyicu = "^2.11"
-clickhouse-sqlalchemy = {path = "/home/elliot/Projects/clickhouse-sqlalchemy", develop = true}
 libindic-soundex = "^1.0.2"
 libindic-utils = "^1.0.3"
 metaphone = "^0.6"
+ftmq = {git = "https://github.com/investigativedata/ftmq", rev = "develop"}
+pandas = "^2.0.3"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -52,3 +52,9 @@ pre-commit = "^3.3.3"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+env = [
+    "NOMENKLATURA_DB_STORE_TABLE=nk_store_test",
+    "LOG_LEVEL=DEBUG"
+]
