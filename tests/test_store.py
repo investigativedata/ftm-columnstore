@@ -1,5 +1,6 @@
 from ftmq.model import Catalog, Dataset
 from ftmq.query import Query
+from nomenklatura.db import get_metadata
 from nomenklatura.entity import CompositeEntity
 
 from ftm_columnstore.statements import FingerprintStatement
@@ -7,6 +8,7 @@ from ftm_columnstore.store import get_store
 
 
 def test_store_base(donations):
+    get_metadata.cache_clear()
     store = get_store()
     len_proxies = 0
     with store.writer() as bulk:
@@ -61,6 +63,7 @@ def test_store_base(donations):
 
 
 def test_store_queries(ec_meetings, eu_authorities):
+    get_metadata.cache_clear()
     catalog = Catalog(
         datasets=[Dataset(name="eu_authorities"), Dataset(name="ec_meetings")]
     )
