@@ -39,14 +39,16 @@ class BaseClickhouseStore(nk.SqlStore):
         return nk.sql.SqlView(self, scope, external=external)
 
     def _execute(
-        self, q: Select, stream: bool | None = True
+        self, q: Select, many: bool | None = True
     ) -> Generator[Any, None, None]:
-        if stream:
+        if many:
             yield from self.driver.execute_iter(q)
         else:
             yield from self.driver.execute(q)
 
-    def _iterate_stmts(self, q: Select) -> Generator[Statement, None, None]:
+    def _iterate_stmts(
+        self, q: Select, *args, **kwargs
+    ) -> Generator[Statement, None, None]:
         for row in self._execute(q):
             data = dict(zip(self.columns, row))
             yield Statement.from_dict(data)
@@ -58,10 +60,8 @@ class ClickhouseStore(Store, BaseClickhouseStore):
         return SqlQueryView(self, scope, external=external)
 
 
-class ClickhouseWriter(nk.Writer[DS, CE]):
-    def __init__(self, store: BaseClickhouseStore):
-        self.store: ClickhouseStore = store
-        self.batch: set[Statement] | None = None
+class ClickhouseWriter(nk.sql.SqlWriter[DS, CE]):
+    BATCH_STATEMENTS = BULK_WRITE_SIZE
 
     def flush(self) -> None:
         if self.batch:
@@ -70,16 +70,6 @@ class ClickhouseWriter(nk.Writer[DS, CE]):
             df = pd.DataFrame(fingerprints_from_statements(self.batch))
             self.store.driver.insert(df, self.store.driver.table_fpx)
         self.batch = set()
-
-    def add_statement(self, stmt: Statement) -> None:
-        if self.batch is None:
-            self.batch = set()
-        if stmt.entity_id is None:
-            return
-        if len(self.batch) >= BULK_WRITE_SIZE:
-            self.flush()
-        stmt.canonical_id = self.store.resolver.get_canonical(stmt.entity_id)
-        self.batch.add(stmt)
 
     def pop(self, entity_id: str) -> list[Statement]:
         self.flush()
