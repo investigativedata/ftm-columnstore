@@ -1,11 +1,14 @@
 import logging
-from functools import lru_cache
-from typing import Any, Iterable, Iterator, Optional
+from collections.abc import Iterable, Iterator
+from functools import cache
+from typing import Any
 
 import pandas as pd
 from clickhouse_driver import Client, errors
+from nomenklatura.db import DB_STORE_TABLE
+from sqlalchemy import CompoundSelect, Select
 
-from . import settings
+from ftm_columnstore import settings
 
 log = logging.getLogger(__name__)
 
@@ -21,14 +24,20 @@ def table_exists(e: Exception, table: str) -> bool:
 class ClickhouseDriver:
     def __init__(
         self,
-        uri: Optional[str] = settings.DATABASE_URI,
-        table: Optional[str] = settings.DATABASE_TABLE,
+        uri: str | None = settings.DATABASE_URI,
     ):
-        self.table = table
-        self.table_fpx = f"{table}_fpx"
-        self.table_xref = f"{table}_xref"
-        self.view_stats = f"{table}_stats"
-        self.view_fpx_freq = f"{table}_fpx_freq"
+        self.table = DB_STORE_TABLE
+        self.table_fpx = f"{self.table}_fpx"
+        self.table_xref = f"{self.table}_xref"
+        self.view_stats = f"{self.table}_stats"
+        self.view_fpx_freq = f"{self.table}_fpx_freq"
+        self.tables = (
+            self.table,
+            self.table_fpx,
+            self.table_xref,
+            self.view_stats,
+            self.view_fpx_freq,
+        )
         self.uri = uri
         self.ensure_table()
 
@@ -38,23 +47,18 @@ class ClickhouseDriver:
     def __repr__(self):
         return f"<{self.__class__.__name__} ({self})>"
 
-    def init(self, recreate: Optional[bool] = False, exists_ok: Optional[bool] = False):
+    def init(self, recreate: bool | None = False, exists_ok: bool | None = False):
         if recreate:
             self.dangerous_drop()
         for stmt in self.create_statements:
             try:
                 self.execute(stmt)
             except Exception as e:
-                if exists_ok and (
-                    table_exists(e, self.table)
-                    or table_exists(e, self.table_fpx)  # noqa
-                    or table_exists(e, self.table_xref)  # noqa
-                    or table_exists(e, self.view_stats)  # noqa
-                    or table_exists(e, self.view_fpx_freq)  # noqa
-                ):
+                if exists_ok and any(table_exists(e, t) for t in self.tables):
                     pass
                 else:
                     raise e
+        # self.execute("GRANT ALL ON *.* TO CURRENT_USER WITH GRANT OPTION")
 
     def dangerous_drop(self):
         for stmt in self.drop_statements:
@@ -64,18 +68,19 @@ class ClickhouseDriver:
         try:
             self.init(recreate=False)
         except errors.ServerException as e:
-            if (
-                table_exists(e, self.table)
-                or table_exists(e, self.table_fpx)  # noqa
-                or table_exists(e, self.table_xref)  # noqa
-                or table_exists(e, self.view_stats)  # noqa
-                or table_exists(e, self.view_fpx_freq)  # noqa
-            ):
+            if any(table_exists(e, t) for t in self.tables):
                 pass
             else:
                 raise e
 
-    def insert(self, df: pd.DataFrame, table: Optional[str] = None) -> int:
+    def get_compiled_query(self, s: Select | str) -> str:
+        if isinstance(s, (Select, CompoundSelect)):
+            s = str(s.compile(compile_kwargs={"literal_binds": True}))
+            s = s.replace("group_concat", "first_value")
+        log.debug(s)
+        return s
+
+    def insert(self, df: pd.DataFrame, table: str | None = None) -> int:
         # https://clickhouse-driver.readthedocs.io/en/latest/features.html#numpy-pandas-support
         if df.empty:
             return 0
@@ -84,9 +89,8 @@ class ClickhouseDriver:
             res = conn.insert_dataframe("INSERT INTO %s VALUES" % table, df)
         return res
 
-    def query(self, query: Any, *args, **kwargs) -> Iterator[Any]:
-        query = str(query)
-        log.debug(query)
+    def execute_iter(self, query: Select | str, *args, **kwargs) -> Iterator[Any]:
+        query = self.get_compiled_query(query)
         conn = self.get_connection()
         kwargs = {**{"settings": {"max_block_size": 100000}}, **kwargs}
         return conn.execute_iter(query, *args, **kwargs)
@@ -94,34 +98,27 @@ class ClickhouseDriver:
         #     res = conn.execute_iter(query, settings={"max_block_size": 100000})
         # return res
 
-    def query_dataframe(self, query: Any) -> pd.DataFrame:
-        query = str(query)
-        log.debug(query)
+    def execute(self, query: Select | CompoundSelect | str, *args, **kwargs):
+        query = self.get_compiled_query(query)
+        with self.get_connection() as conn:
+            return conn.execute(query, *args, **kwargs)
+
+    def query_dataframe(self, query: Select) -> pd.DataFrame:
+        query = self.get_compiled_query(query)
         with self.get_connection() as conn:
             return conn.query_dataframe(query)
 
     def get_connection(
         self,
-        uri: Optional[str] = settings.DATABASE_URI,
+        uri: str | None = settings.DATABASE_URI,
     ):
-        host, *port = uri.split(":")
-        if not port:
-            port = [9000]
-        return Client(settings={"use_numpy": True}, host=host, port=port[0])
-
-    def execute(self, *args, **kwargs):
-        log.debug("\n".join(args))
-        with self.get_connection() as conn:
-            res = conn.execute(*args, **kwargs)
-        return res
-
-    def execute_iter(self, *args, **kwargs):
-        return self.query(*args, **kwargs)
+        uri = uri + "?use_numpy=True"
+        return Client.from_url(uri)
 
     def sync(self):  # somehow not guaranteed by clickhouse
         self.execute(f"OPTIMIZE TABLE {self.table} FINAL DEDUPLICATE")
 
-    def optimize(self, full: Optional[bool] = False):
+    def optimize(self, full: bool | None = False):
         for table in (self.view_stats, self.view_fpx_freq):
             log.info(f"Optimizing `{table}` ...")
             self.execute(f"OPTIMIZE TABLE {table} FINAL")
@@ -135,42 +132,38 @@ class ClickhouseDriver:
         CREATE TABLE {self.table}
         (
             `id`                      FixedString(40),
-            `dataset`                 LowCardinality(String),
-            `canonical_id`            String,
             `entity_id`               String,
-            `schema`                  LowCardinality(String),
-            `origin`                  LowCardinality(String),
+            `canonical_id`            String,
             `prop`                    LowCardinality(String),
             `prop_type`               LowCardinality(String),
+            `schema`                  LowCardinality(String),
             `value`                   String,
-            `lang`                    LowCardinality(String),
             `original_value`          Nullable(String),
-            `target`                  Nullable(Boolean),
-            `external`                Nullable(Boolean),
-            `first_seen`              DateTime64,
+            `dataset`                 LowCardinality(String),
+            `lang`                    LowCardinality(String),
+            `target`                  Boolean,
+            `external`                Boolean,
+            `first_seen`              Nullable(DateTime64),
             `last_seen`               DateTime64,
-            `sstatus`                 LowCardinality(String),
             INDEX cix (canonical_id) TYPE set(0) GRANULARITY 4,
             INDEX eix (entity_id) TYPE set(0) GRANULARITY 4,
             INDEX six (schema) TYPE set(0) GRANULARITY 1,
-            INDEX oix (origin) TYPE set(0) GRANULARITY 4,
             INDEX tix (prop_type) TYPE set(0) GRANULARITY 1,
             INDEX pix (prop) TYPE set(0) GRANULARITY 1
         ) ENGINE = ReplacingMergeTree(last_seen)
-        PRIMARY KEY (dataset,schema,canonical_id)
-        ORDER BY (dataset,schema,canonical_id,entity_id,origin,prop,value)
+        ORDER BY (canonical_id, id)
         """
 
         create_table_fpx = f"""
         CREATE TABLE {self.table_fpx}
         (
-            `dataset`                 LowCardinality(String),
-            `entity_id`               String,
-            `schema`                  LowCardinality(String),
-            `prop`                    LowCardinality(String),
-            `prop_type`               LowCardinality(String),
-            `algorithm`               Enum('fingerprint', 'metaphone1', 'metaphone2', 'soundex'),
-            `value`                   String,
+            `algorithm`     Enum('fingerprint', 'metaphone1', 'metaphone2', 'soundex'),
+            `value`         String,
+            `dataset`       LowCardinality(String),
+            `entity_id`     String,
+            `schema`        LowCardinality(String),
+            `prop`          LowCardinality(String),
+            `prop_type`     LowCardinality(String),
             INDEX eix (entity_id) TYPE set(0) GRANULARITY 4,
             INDEX six (schema) TYPE set(0) GRANULARITY 1,
             INDEX tix (prop_type) TYPE set(0) GRANULARITY 1,
@@ -249,13 +242,11 @@ class ClickhouseDriver:
                 SELECT * ORDER BY prop_type,schema,dataset)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_prop (
                 SELECT * ORDER BY prop,schema,dataset)""",
-            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_entities (
-                SELECT groupUniqArray(dataset) AS datasets,canonical_id,schema,prop,groupUniqArray(value) AS values
-                GROUP BY canonical_id,schema,prop)""",
             f"""ALTER TABLE {self.table_fpx} ADD PROJECTION {self.table_fpx}_value (
                 SELECT * ORDER BY value,schema,dataset)""",
             f"""ALTER TABLE {self.table_xref} ADD PROJECTION {self.table_xref}_reverse (
-                SELECT * ORDER BY right_dataset,right_schema,right_id,left_dataset,left_schema,left_id)""",
+                SELECT * ORDER BY
+            right_dataset,right_schema,right_id,left_dataset,left_schema,left_id)""",
         )
         return (
             create_table,
@@ -277,13 +268,7 @@ class ClickhouseDriver:
         )
 
 
-@lru_cache(128)
-def get_driver(
-    uri: Optional[str] = None,
-    table: Optional[str] = None,
-) -> ClickhouseDriver:
-
-    # this allows overwriting settings during runtime (aka tests)
+@cache
+def get_driver(uri: str | None = None) -> ClickhouseDriver:
     uri = uri or settings.DATABASE_URI
-    table = table or settings.DATABASE_TABLE
-    return ClickhouseDriver(uri, table)
+    return ClickhouseDriver(uri)

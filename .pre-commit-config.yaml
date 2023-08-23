@@ -8,6 +8,7 @@ repos:
     rev: v4.4.0
     hooks:
       - id: check-added-large-files
+        exclude: (\.csv|\.i?jsonl?)$
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: check-symlinks
@@ -47,17 +48,19 @@ repos:
       - id: pyproject-flake8
         additional_dependencies: [ flake8-bugbear ]
         args: [ "--extend-ignore", "E501" ]
+        exclude: (test_[\w]+\.py)$
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.2.5
     hooks:
       - id: codespell
-        exclude: (test_[\w]+\.py|\.csv|\.json|\.lock)$
+        exclude: (test_[\w]+\.py|\.csv|\.i?jsonl?|\.lock)$
 
   - repo: https://github.com/pre-commit/pygrep-hooks
     rev: v1.10.0
     hooks:
       - id: python-check-blanket-noqa
+        exclude: (test_[\w]+\.py)$
       - id: python-check-blanket-type-ignore
       - id: python-no-eval
       - id: python-use-type-annotations
