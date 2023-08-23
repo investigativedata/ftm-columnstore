@@ -33,8 +33,9 @@ pyicu = "^2.11"
 libindic-soundex = "^1.0.2"
 libindic-utils = "^1.0.3"
 metaphone = "^0.6"
-ftmq = {git = "https://github.com/investigativedata/ftmq", rev = "develop"}
 pandas = "^2.0.3"
+rich = "^13.5.2"
+ftmq = {git = "https://github.com/investigativedata/ftmq", rev = "develop"}
 
 
 [tool.poetry.group.dev.dependencies]
@@ -55,6 +56,6 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 env = [
-    "NOMENKLATURA_DB_STORE_TABLE=nk_store_test",
+    "NOMENKLATURA_STATEMENT_TABLE=test_table",
     "LOG_LEVEL=DEBUG"
 ]

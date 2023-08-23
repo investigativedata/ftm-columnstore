@@ -1,12 +1,12 @@
 import logging
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from functools import cache
 from typing import Any
 
 import pandas as pd
-from clickhouse_driver import Client, errors
-from nomenklatura.db import DB_STORE_TABLE
-from sqlalchemy import CompoundSelect, Select
+from clickhouse_driver import Client, dbapi
+from nomenklatura.settings import STATEMENT_TABLE
+from sqlalchemy import Select
 
 from ftm_columnstore import settings
 
@@ -21,12 +21,36 @@ def table_exists(e: Exception, table: str) -> bool:
     return False
 
 
-class ClickhouseDriver:
+def get_compiled_query(q: Any) -> str:
+    if hasattr(q, "compile"):
+        q = str(q.compile(compile_kwargs={"literal_binds": True}))
+        q = q.replace("group_concat", "first_value")
+    q = str(q)
+    log.debug(q)
+    return q
+
+
+class Connection(dbapi.Connection):
+    stream: bool = False
+
+    def execute(self, q: Any, *args, **kwargs) -> dbapi.cursor.Cursor:
+        cursor = self.cursor()
+        q = get_compiled_query(q)
+        cursor.execute(q, *args, **kwargs)
+        return cursor
+
+    def execution_options(self, *args, **kwargs) -> "Connection":
+        self.stream = kwargs.get("stream_results", False)
+        return self
+
+
+class ClickhouseEngine:
     def __init__(
         self,
         uri: str | None = settings.DATABASE_URI,
     ):
-        self.table = DB_STORE_TABLE
+        self.name = "clickhouse"
+        self.table = STATEMENT_TABLE
         self.table_fpx = f"{self.table}_fpx"
         self.table_xref = f"{self.table}_xref"
         self.view_stats = f"{self.table}_stats"
@@ -39,7 +63,7 @@ class ClickhouseDriver:
             self.view_fpx_freq,
         )
         self.uri = uri
-        self.ensure_table()
+        self.ensure(recreate=False, exists_ok=True)
 
     def __str__(self):
         return self.uri
@@ -47,81 +71,49 @@ class ClickhouseDriver:
     def __repr__(self):
         return f"<{self.__class__.__name__} ({self})>"
 
-    def init(self, recreate: bool | None = False, exists_ok: bool | None = False):
-        if recreate:
-            self.dangerous_drop()
-        for stmt in self.create_statements:
-            try:
-                self.execute(stmt)
-            except Exception as e:
-                if exists_ok and any(table_exists(e, t) for t in self.tables):
-                    pass
-                else:
-                    raise e
-        # self.execute("GRANT ALL ON *.* TO CURRENT_USER WITH GRANT OPTION")
+    def connect(self, use_numpy: bool | None = False) -> dbapi.Connection | Client:
+        if use_numpy:
+            uri = self.uri + "?use_numpy=True"
+            return Client.from_url(uri)
+        return Connection(self.uri)
 
-    def dangerous_drop(self):
-        for stmt in self.drop_statements:
-            self.execute(stmt)
-
-    def ensure_table(self):
-        try:
-            self.init(recreate=False)
-        except errors.ServerException as e:
-            if any(table_exists(e, t) for t in self.tables):
-                pass
-            else:
-                raise e
-
-    def get_compiled_query(self, s: Select | str) -> str:
-        if isinstance(s, (Select, CompoundSelect)):
-            s = str(s.compile(compile_kwargs={"literal_binds": True}))
-            s = s.replace("group_concat", "first_value")
-        log.debug(s)
-        return s
+    def ensure(self, recreate: bool | None = False, exists_ok: bool | None = False):
+        with self.connect() as conn:
+            if recreate:
+                for stmt in self.drop_statements:
+                    conn.execute(stmt)
+            for stmt in self.create_statements:
+                try:
+                    conn.execute(stmt)
+                except Exception as e:
+                    if exists_ok and any(table_exists(e, t) for t in self.tables):
+                        pass
+                    else:
+                        raise e
+            # self.execute("GRANT ALL ON *.* TO CURRENT_USER WITH GRANT OPTION")
 
     def insert(self, df: pd.DataFrame, table: str | None = None) -> int:
         # https://clickhouse-driver.readthedocs.io/en/latest/features.html#numpy-pandas-support
         if df.empty:
             return 0
         table = table or self.table
-        with self.get_connection() as conn:
-            res = conn.insert_dataframe("INSERT INTO %s VALUES" % table, df)
-        return res
-
-    def execute_iter(self, query: Select | str, *args, **kwargs) -> Iterator[Any]:
-        query = self.get_compiled_query(query)
-        conn = self.get_connection()
-        kwargs = {**{"settings": {"max_block_size": 100000}}, **kwargs}
-        return conn.execute_iter(query, *args, **kwargs)
-        # with self.get_connection() as conn:
-        #     res = conn.execute_iter(query, settings={"max_block_size": 100000})
-        # return res
-
-    def execute(self, query: Select | CompoundSelect | str, *args, **kwargs):
-        query = self.get_compiled_query(query)
-        with self.get_connection() as conn:
-            return conn.execute(query, *args, **kwargs)
+        with self.connect(use_numpy=True) as conn:
+            return conn.insert_dataframe("INSERT INTO %s VALUES" % table, df)
 
     def query_dataframe(self, query: Select) -> pd.DataFrame:
-        query = self.get_compiled_query(query)
+        query = get_compiled_query(query)
         with self.get_connection() as conn:
             return conn.query_dataframe(query)
 
-    def get_connection(
-        self,
-        uri: str | None = settings.DATABASE_URI,
-    ):
-        uri = uri + "?use_numpy=True"
-        return Client.from_url(uri)
-
     def sync(self):  # somehow not guaranteed by clickhouse
-        self.execute(f"OPTIMIZE TABLE {self.table} FINAL DEDUPLICATE")
+        with self.connect() as conn:
+            conn.execute(f"OPTIMIZE TABLE {self.table} FINAL DEDUPLICATE")
 
     def optimize(self, full: bool | None = False):
-        for table in (self.view_stats, self.view_fpx_freq):
-            log.info(f"Optimizing `{table}` ...")
-            self.execute(f"OPTIMIZE TABLE {table} FINAL")
+        with self.connect() as conn:
+            for table in (self.view_stats, self.view_fpx_freq):
+                log.info(f"Optimizing `{table}` ...")
+                conn.execute(f"OPTIMIZE TABLE {table} FINAL")
         if full:
             log.info(f"Optimizing `{self.table}` ...")
             self.sync()
@@ -269,6 +261,6 @@ class ClickhouseDriver:
 
 
 @cache
-def get_driver(uri: str | None = None) -> ClickhouseDriver:
+def get_engine(uri: str | None = None) -> ClickhouseEngine:
     uri = uri or settings.DATABASE_URI
-    return ClickhouseDriver(uri)
+    return ClickhouseEngine(uri)

@@ -28,6 +28,7 @@ def test_store_base(donations):
                 assert iprop.reverse == prop
                 assert ientity == entity
                 tested = True
+                break
     assert tested
 
     adjacent = list(view.get_adjacent(entity))
@@ -40,15 +41,13 @@ def test_store_base(donations):
     # assert view.get_entity(entity.id) is None
 
     # fingerprint statements
-    tested = False
-    for row in store.driver.execute_iter(
-        f"SELECT * FROM {store.driver.table_fpx} WHERE entity_id = '4e0bd810e1fcb49990a2b31709b6140c4c9139c5'"
-    ):
+    with store.engine.connect() as conn:
+        cursor = conn.execute(
+            f"SELECT * FROM {store.engine.table_fpx} WHERE entity_id = '4e0bd810e1fcb49990a2b31709b6140c4c9139c5'"
+        )
+        row = cursor.fetchone()
         stmt = FingerprintStatement.from_row(*row)
         assert stmt["value"] == "ag holding tchibo"
-        tested = True
-        break
-    assert tested
 
     # upsert
     with store.writer() as bulk:

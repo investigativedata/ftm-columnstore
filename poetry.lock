@@ -1170,7 +1170,7 @@ cryptography = ">=41.0.2"
 followthemoney = "^3.4.0"
 fsspec = "^2023.6.0"
 gcsfs = "^2023.6.0"
-nomenklatura = {git = "https://github.com/opensanctions/nomenklatura", rev = "feature/sql-store"}
+nomenklatura = "^3.4.0"
 orjson = "^3.9.1"
 pycountry = "^22.3.5"
 pydantic = "<2"
@@ -1183,7 +1183,7 @@ sqlalchemy = "^2.0.19"
 type = "git"
 url = "https://github.com/investigativedata/ftmq"
 reference = "develop"
-resolved_reference = "0d5421d254a8befd7cec3e71fe3604f3d38f26d3"
+resolved_reference = "d3301d9ea746fc0f474b1a5cc4749d0cb0d198fd"
 
 [[package]]
 name = "gcsfs"
@@ -2219,15 +2219,17 @@ setuptools = "*"
 
 [[package]]
 name = "nomenklatura"
-version = "3.3.8"
-description = ""
+version = "3.4.0"
+description = "Make record linkages in followthemoney data."
 optional = false
 python-versions = "*"
-files = []
-develop = false
+files = [
+    {file = "nomenklatura-3.4.0-py3-none-any.whl", hash = "sha256:b169eada1de93417cb5f883b25dcbd9a3b3ac4ebd0f400dc6a0a6a494f79beb0"},
+    {file = "nomenklatura-3.4.0.tar.gz", hash = "sha256:d9269938ed6eb80703e75a9b6ccbbccba7b651d7938726008f4faa4d1af4aef0"},
+]
 
 [package.dependencies]
-click = ">=8.0.0,<8.1.7"
+click = "<9.0.0"
 followthemoney = ">=3.3.0,<4.0.0"
 jellyfish = ">=1.0.0,<2.0.0"
 plyvel = "*"
@@ -2239,12 +2241,6 @@ textual = ">=0.19.0,<1.0.0"
 [package.extras]
 dev = ["coverage (>=4.1)", "flake8 (>=2.6.0)", "mypy", "pytest", "pytest-cov", "requests-mock", "twine", "types-requests", "types-setuptools", "wheel (>=0.29.0)"]
 leveldb = ["plyvel"]
-
-[package.source]
-type = "git"
-url = "https://github.com/opensanctions/nomenklatura"
-reference = "feature/sql-store"
-resolved_reference = "3d25cb41a466a94325f3ff9f4f6ff1842b718bf4"
 
 [[package]]
 name = "normality"
@@ -3925,4 +3921,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "15127cdbf4eeb4b9b0772ad57dc1b852b84efd28f14c9ef2bacfa33593a99041"
+content-hash = "066af0c74481fe4228cd21064c524517dd903da302fa83e87fe8eb4b75285a79"
