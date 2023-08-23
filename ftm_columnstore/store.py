@@ -39,9 +39,9 @@ class BaseClickhouseStore(nk.SqlStore):
         return nk.sql.SqlView(self, scope, external=external)
 
     def _execute(
-        self, q: Select, many: bool | None = True
+        self, q: Select, stream: bool | None = True
     ) -> Generator[Any, None, None]:
-        if many:
+        if stream:
             yield from self.driver.execute_iter(q)
         else:
             yield from self.driver.execute(q)
@@ -50,25 +50,6 @@ class BaseClickhouseStore(nk.SqlStore):
         for row in self._execute(q):
             data = dict(zip(self.columns, row))
             yield Statement.from_dict(data)
-
-    def _iterate(self, q: Select, *args, **kwargs) -> Generator[CE, None, None]:
-        current_id = None
-        current_stmts: list[Statement] = []
-        for stmt in self._iterate_stmts(q):
-            entity_id = stmt.entity_id
-            if current_id is None:
-                current_id = entity_id
-            if current_id != entity_id:
-                proxy = self.assemble(current_stmts)
-                if proxy is not None:
-                    yield proxy
-                current_id = entity_id
-                current_stmts = []
-            current_stmts.append(stmt)
-        if len(current_stmts):
-            proxy = self.assemble(current_stmts)
-            if proxy is not None:
-                yield proxy
 
 
 class ClickhouseStore(Store, BaseClickhouseStore):
