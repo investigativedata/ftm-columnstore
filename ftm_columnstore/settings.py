@@ -1,5 +1,7 @@
 import os
 
+VERSION = "0.1.1"
+
 
 def get_env(name, default=None):
     value = os.environ.get(name)

@@ -22,6 +22,7 @@ def table_exists(e: Exception, table: str) -> bool:
 
 
 def get_compiled_query(q: Any) -> str:
+    # FIXME: this is dangerous!
     if hasattr(q, "compile"):
         q = str(q.compile(compile_kwargs={"literal_binds": True}))
         q = q.replace("group_concat", "first_value")
@@ -44,11 +45,16 @@ class Connection(dbapi.Connection):
         return self
 
 
+class ClickhouseDialect:
+    name = "postgres"
+
+
 class ClickhouseEngine:
     def __init__(
         self,
         uri: str | None = settings.DATABASE_URI,
     ):
+        self.dialect = ClickhouseDialect()  # FIXME
         self.name = "clickhouse"
         self.table = STATEMENT_TABLE
         self.table_fpx = f"{self.table}_fpx"
@@ -140,6 +146,7 @@ class ClickhouseEngine:
             INDEX cix (canonical_id) TYPE set(0) GRANULARITY 4,
             INDEX eix (entity_id) TYPE set(0) GRANULARITY 4,
             INDEX six (schema) TYPE set(0) GRANULARITY 1,
+            INDEX dix (dataset) TYPE set(0) GRANULARITY 1,
             INDEX tix (prop_type) TYPE set(0) GRANULARITY 1,
             INDEX pix (prop) TYPE set(0) GRANULARITY 1
         ) ENGINE = ReplacingMergeTree(last_seen)
@@ -181,9 +188,13 @@ class ClickhouseEngine:
             `judgement`               LowCardinality(String),
             `score`                   Decimal32(8),
             `ts`                      DateTime64,
+            `user`                    String,
+            INDEX lix (left_id) TYPE set(0) GRANULARITY 4,
+            INDEX rix (right_id) TYPE set(0) GRANULARITY 4,
+            INDEX ldix (left_dataset) TYPE set(0) GRANULARITY 1,
+            INDEX rdix (right_dataset) TYPE set(0) GRANULARITY 1
         ) ENGINE = ReplacingMergeTree(ts)
-        PRIMARY KEY (left_dataset,left_schema)
-        ORDER BY (left_dataset,left_schema,left_id,right_dataset,right_schema,right_id)
+        ORDER BY (left_id,right_id)
         """
 
         create_view_stats = f"""

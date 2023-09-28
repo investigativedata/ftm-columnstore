@@ -3,7 +3,7 @@ from functools import cache
 
 import pandas as pd
 from ftmq.model.dataset import C, Dataset
-from ftmq.store import SQLQueryView, Store
+from ftmq.store import SQLStore
 from nomenklatura import store as nk
 from nomenklatura.dataset import DS
 from nomenklatura.db import get_metadata
@@ -45,10 +45,8 @@ class BaseClickhouseStore(nk.SQLStore):
             yield Statement.from_dict(data)
 
 
-class ClickhouseStore(Store, BaseClickhouseStore):
-    def query(self, scope: DS | None = None, external: bool = False) -> nk.View[DS, CE]:
-        scope = scope or self.dataset
-        return SQLQueryView(self, scope, external=external)
+class ClickhouseStore(SQLStore, BaseClickhouseStore):
+    pass
 
 
 class ClickhouseWriter(nk.sql.SQLWriter[DS, CE]):
@@ -78,7 +76,7 @@ def get_store(
     uri: str | None = None,
     catalog: C | None = None,
     dataset: Dataset | str | None = None,
-) -> Store:
+) -> ClickhouseStore:
     get_metadata.cache_clear()
     if isinstance(dataset, str):
         dataset = Dataset(name=dataset)

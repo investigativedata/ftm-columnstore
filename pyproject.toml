@@ -35,7 +35,7 @@ libindic-utils = "^1.0.3"
 metaphone = "^0.6"
 pandas = "^2.0.3"
 rich = "^13.5.2"
-ftmq = {git = "https://github.com/investigativedata/ftmq", rev = "develop"}
+ftmq = "^0.3.2"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -17,11 +17,6 @@ def luanda_leaks():
 
 
 # @pytest.fixture(scope="module")
-# def opensanctions():
-#     return smart_read_proxies(FIXTURES_PATH / "opensanctions.ftm.ijson")
-
-
-# @pytest.fixture(scope="module")
 # def wd_peps():
 #     return smart_read_proxies(FIXTURES_PATH / "wd_peps.ftm.json")
 

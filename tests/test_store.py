@@ -9,6 +9,7 @@ from ftm_columnstore.store import get_store
 def test_store_base(donations):
     store = get_store()
     len_proxies = 0
+
     with store.writer() as bulk:
         for proxy in donations:
             bulk.add_entity(proxy)
@@ -70,6 +71,7 @@ def test_store_queries(ec_meetings, eu_authorities):
             bulk.add_entity(proxy)
         for proxy in ec_meetings:
             bulk.add_entity(proxy)
+
     view = store.default_view()
     properties = view.get_entity("eu-authorities-satcen").to_dict()["properties"]
     assert properties == {
@@ -102,7 +104,8 @@ def test_store_queries(ec_meetings, eu_authorities):
     res = [e for e in view.entities(q)]
     assert len(res) == 151
     assert "eu_authorities" in res[0].datasets
-    q = Query().where(schema="Event", prop="date", value=2023, operator="gte")
+
+    q = Query().where(schema="Event", prop="date", value=2023, comparator="gte")
     res = [e for e in view.entities(q)]
     assert res[0].schema.name == "Event"
     assert len(res) == 76
@@ -122,7 +125,7 @@ def test_store_queries(ec_meetings, eu_authorities):
     ]
 
     # ordering
-    q = Query().where(schema="Event", prop="date", value=2023, operator="gte")
+    q = Query().where(schema="Event", prop="date", value=2023, comparator="gte")
     q = q.order_by("location")
     res = [e for e in view.entities(q)]
     assert len(res) == 76
@@ -133,7 +136,7 @@ def test_store_queries(ec_meetings, eu_authorities):
     assert res[0].get("location") == ["virtual"]
 
     # slice
-    q = Query().where(schema="Event", prop="date", value=2023, operator="gte")
+    q = Query().where(schema="Event", prop="date", value=2023, comparator="gte")
     q = q.order_by("location")
     q = q[:10]
     res = [e for e in view.entities(q)]
