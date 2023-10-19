@@ -1,0 +1,61 @@
+[tool.poetry]
+name = "ftm-columnstore"
+version = "0.1.1"
+description = "Column store implementation for ftm data based on clickhouse"
+authors = ["Simon Wörpel <simon@investigativedata.org>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/investigativedata/ftm-columnstore"
+repository = "https://github.com/investigativedata/ftm-columnstore"
+documentation = "https://github.com/investigativedata/ftm-columnstore"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.11",
+]
+packages = [{include = "ftm_columnstore"}]
+
+[tool.poetry.scripts]
+ftmcs = "ftm_columnstore.cli:cli"
+
+[tool.poetry.urls]
+"Bug Tracker" = "https://github.com/investigativedata/ftm-columnstore/issues"
+
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.12"
+banal = "^1.0.6"
+typer = "^0.9.0"
+clickhouse-driver = {extras = ["numpy"], version = "^0.2.6"}
+orjson = "^3.9.4"
+pyicu = "^2.11"
+libindic-soundex = "^1.0.2"
+libindic-utils = "^1.0.3"
+metaphone = "^0.6"
+pandas = "^2.0.3"
+rich = "^13.5.2"
+ftmq = "^0.4.0"
+
+
+[tool.poetry.group.dev.dependencies]
+absolufy-imports = "^0.3.1"
+ipdb = "^0.13.13"
+black = "^23.7.0"
+isort = "^5.12.0"
+flake8 = "^6.1.0"
+mypy = "^1.4.1"
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+pytest-env = "^0.8.2"
+pre-commit = "^3.3.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+env = [
+    "NOMENKLATURA_STATEMENT_TABLE=test_table",
+    "LOG_LEVEL=DEBUG"
+]

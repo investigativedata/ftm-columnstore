@@ -1,18 +1,18 @@
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
-from typing import Any, Literal
+from typing import Literal
 
 from fingerprints import generate as fp
 from followthemoney.types import registry
+from ftmq.types import CE
 from libindic.soundex import Soundex
 from metaphone import doublemetaphone
-from nomenklatura.entity import CE, CompositeEntity
 from normality import WS
 
 SX = Soundex()
 
 
-class PhoneticAlgorithm(Enum):
+class PhoneticAlgorithm(StrEnum):
     fingerprint = "fingerprint"
     metaphone1 = "metaphone1"
     metaphone2 = "metaphone2"
@@ -20,13 +20,13 @@ class PhoneticAlgorithm(Enum):
 
 
 TPhoneticAlgorithm = Literal[
-    PhoneticAlgorithm.fingerprint.value,
-    PhoneticAlgorithm.metaphone1.value,
-    PhoneticAlgorithm.metaphone2.value,
-    PhoneticAlgorithm.soundex.value,
+    PhoneticAlgorithm.fingerprint,
+    PhoneticAlgorithm.metaphone1,
+    PhoneticAlgorithm.metaphone2,
+    PhoneticAlgorithm.soundex,
 ]
 
-DEFAULT_PHONETIC_ALGORITHM = PhoneticAlgorithm.fingerprint.value
+DEFAULT_PHONETIC_ALGORITHM = PhoneticAlgorithm.fingerprint
 
 
 @lru_cache(10_000_000)
@@ -60,23 +60,21 @@ def get_phonetics(
     if not value:
         return ("",)
     tokens = tokenize(value)
-    if algorithm == PhoneticAlgorithm.fingerprint.value:
+    if algorithm == PhoneticAlgorithm.fingerprint:
         return tuple(t for t in tokens)
-    if algorithm == PhoneticAlgorithm.metaphone1.value:
+    if algorithm == PhoneticAlgorithm.metaphone1:
         return tuple(get_metaphone(t)[0] for t in tokens)
-    if algorithm == PhoneticAlgorithm.metaphone2.value:
+    if algorithm == PhoneticAlgorithm.metaphone2:
         return tuple(get_metaphone(t)[1] for t in tokens)
-    if algorithm == PhoneticAlgorithm.soundex.value:
+    if algorithm == PhoneticAlgorithm.soundex:
         return tuple(get_soundex(t) for t in tokens)
 
 
 def get_entity_fpx(
-    entity: CE | dict[str, Any],
+    entity: CE,
     algorithm: TPhoneticAlgorithm | None = DEFAULT_PHONETIC_ALGORITHM,
 ) -> set[str]:
     values = set()
-    if isinstance(entity, dict):
-        entity = CompositeEntity.from_dict(entity)
     for value in entity.get_type_values(registry.get("name")):
         values.update(get_phonetics(value, algorithm))
     for value in entity.get_type_values(registry.get("label")):
