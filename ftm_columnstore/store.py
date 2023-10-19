@@ -76,8 +76,9 @@ def get_store(
     uri: str | None = None,
     catalog: C | None = None,
     dataset: Dataset | str | None = None,
+    resolver: Resolver | str | None = None,
 ) -> ClickhouseStore:
     get_metadata.cache_clear()
     if isinstance(dataset, str):
         dataset = Dataset(name=dataset)
-    return ClickhouseStore(catalog, dataset, uri=uri)
+    return ClickhouseStore(catalog, dataset, uri=uri, resolver=resolver)

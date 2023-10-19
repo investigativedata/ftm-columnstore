@@ -1153,34 +1153,36 @@ tqdm = ["tqdm"]
 
 [[package]]
 name = "ftmq"
-version = "0.3.2"
+version = "0.4.0"
 description = "followthemoney query dsl and io helpers"
 optional = false
-python-versions = ">=3.10,<3.13"
+python-versions = ">=3.11,<3.12"
 files = [
-    {file = "ftmq-0.3.2-py3-none-any.whl", hash = "sha256:83c53bf34dfa9db3110e2ceb74f8c3897657f800f4031fc678f96d8122defa15"},
-    {file = "ftmq-0.3.2.tar.gz", hash = "sha256:cc089e7d32255afe57ba6dd5dc1e503a85d11fbec24ec2577c0c48fc397f8866"},
+    {file = "ftmq-0.4.0-py3-none-any.whl", hash = "sha256:4ec4bb3f1318725cd7f1309db6904dc3629b4ed2f08bec4f2eb38c62d35c69ca"},
+    {file = "ftmq-0.4.0.tar.gz", hash = "sha256:3aea6f47286c752accba7fe419f21d31591482491d6ef79beb98013a34146484"},
 ]
 
 [package.dependencies]
-adlfs = ">=2023.4.0,<2024.0.0"
+adlfs = ">=2023.9.0,<2024.0.0"
 alephclient = ">=2.3.6,<3.0.0"
 banal = ">=1.0.6,<2.0.0"
-certifi = ">=2023.07.22"
-click = ">=8.1.3,<9.0.0"
+certifi = ">=2023.7.22,<2024.0.0"
+click = ">=8.1.7,<9.0.0"
 click-default-group = ">=1.2.2,<2.0.0"
-cryptography = ">=41.0.4"
+cryptography = ">=41.0.4,<42.0.0"
+fingerprints = "<1.2"
 followthemoney = ">=3.5.4,<4.0.0"
-fsspec = ">=2023.6.0,<2024.0.0"
-gcsfs = ">=2023.6.0,<2024.0.0"
-nomenklatura = ">=3.4.0,<4.0.0"
-orjson = ">=3.9.1,<4.0.0"
+fsspec = ">=2023.9.2,<2024.0.0"
+gcsfs = ">=2023.9.2,<2024.0.0"
+nomenklatura = "<3.5"
+orjson = ">=3.9.7,<4.0.0"
 pycountry = ">=22.3.5,<23.0.0"
-pydantic = "<2"
+pydantic = ">=1.10.0,<2.0.0"
 PyICU = ">=2.11,<3.0"
-s3fs = ">=2023.6.0,<2024.0.0"
-scipy = ">=1.10.0"
-sqlalchemy = ">=2.0.19,<3.0.0"
+s3fs = ">=2023.9.2,<2024.0.0"
+scipy = ">=1.11.3,<2.0.0"
+sqlalchemy = ">=2.0.21,<3.0.0"
+urllib3 = ">=1.26.18,<2.0.0"
 
 [[package]]
 name = "gcsfs"
@@ -2448,10 +2450,7 @@ files = [
 ]
 
 [package.dependencies]
-numpy = [
-    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
-    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
-]
+numpy = {version = ">=1.23.2", markers = "python_version == \"3.11\""}
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
 tzdata = ">=2022.1"
@@ -3838,17 +3837,17 @@ test = ["coverage", "pytest", "pytest-cov"]
 
 [[package]]
 name = "urllib3"
-version = "1.26.16"
+version = "1.26.18"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*"
 files = [
-    {file = "urllib3-1.26.16-py2.py3-none-any.whl", hash = "sha256:8d36afa7616d8ab714608411b4a3b13e58f463aee519024578e062e141dce20f"},
-    {file = "urllib3-1.26.16.tar.gz", hash = "sha256:8f135f6502756bde6b2a9b28989df5fbe87c9970cecaa69041edcce7f0589b14"},
+    {file = "urllib3-1.26.18-py2.py3-none-any.whl", hash = "sha256:34b97092d7e0a3a8cf7cd10e386f401b3737364026c45e622aa02903dffe0f07"},
+    {file = "urllib3-1.26.18.tar.gz", hash = "sha256:f8ecc1bba5667413457c529ab955bf8c67b45db799d159066261719e328580a0"},
 ]
 
 [package.extras]
-brotli = ["brotli (>=1.0.9)", "brotlicffi (>=0.8.0)", "brotlipy (>=0.6.0)"]
+brotli = ["brotli (==1.0.9)", "brotli (>=1.0.9)", "brotlicffi (>=0.8.0)", "brotlipy (>=0.6.0)"]
 secure = ["certifi", "cryptography (>=1.3.4)", "idna (>=2.0.0)", "ipaddress", "pyOpenSSL (>=0.14)", "urllib3-secure-extra"]
 socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
 
@@ -4071,5 +4070,5 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 
 [metadata]
 lock-version = "2.0"
-python-versions = ">=3.11,<3.13"
-content-hash = "de339f5952f9d64e35e8997a73c4a20928aaad3db2ef4bd31eef889090f56497"
+python-versions = ">=3.11,<3.12"
+content-hash = "781e40edb6aafcc8f497bc89548918333d322c2d19dbe66c33902047f10f7412"

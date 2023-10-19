@@ -24,7 +24,7 @@ ftmcs = "ftm_columnstore.cli:cli"
 
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.13"
+python = ">=3.11,<3.12"
 banal = "^1.0.6"
 typer = "^0.9.0"
 clickhouse-driver = {extras = ["numpy"], version = "^0.2.6"}
@@ -35,7 +35,7 @@ libindic-utils = "^1.0.3"
 metaphone = "^0.6"
 pandas = "^2.0.3"
 rich = "^13.5.2"
-ftmq = "^0.3.2"
+ftmq = "^0.4.0"
 
 
 [tool.poetry.group.dev.dependencies]

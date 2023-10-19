@@ -14,4 +14,3 @@ def get_env(name, default=None):
 DATABASE_URI = get_env("DATABASE_URI", "clickhouse://localhost/default")
 LOG_LEVEL = get_env("LOG_LEVEL", "INFO")
 BULK_WRITE_SIZE = int(get_env("BULK_WRITE_SIZE", 100_000))
-SEARCH_LIMIT = int(get_env("SEARCH_LIMIT", 25))

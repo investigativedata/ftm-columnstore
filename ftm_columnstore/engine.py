@@ -150,7 +150,8 @@ class ClickhouseEngine:
             INDEX tix (prop_type) TYPE set(0) GRANULARITY 1,
             INDEX pix (prop) TYPE set(0) GRANULARITY 1
         ) ENGINE = ReplacingMergeTree(last_seen)
-        ORDER BY (canonical_id, id)
+        PRIMARY KEY (canonical_id, entity_id, id)
+        ORDER BY (canonical_id, entity_id, id)
         """
 
         create_table_fpx = f"""
