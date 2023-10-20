@@ -1,3 +1,6 @@
+[![ftm-columnstore on pypi](https://img.shields.io/pypi/v/ftm-columnstore)](https://pypi.org/project/ftm-columnstore/) [![Python test and package](https://github.com/investigativedata/ftm-columnstore/actions/workflows/python.yml/badge.svg)](https://github.com/investigativedata/ftm-columnstore/actions/workflows/python.yml) [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit) [![Coverage Status](https://coveralls.io/repos/github/investigativedata/ftm-columnstore/badge.svg?branch=main)](https://coveralls.io/github/investigativedata/ftm-columnstore?branch=main) [![GPL-3.0 License](https://img.shields.io/pypi/l/ftm-columnstore)](./LICENSE)
+
+
 # ftm-columnstore
 
 Column-store (based on [Clickhouse](https://clickhouse.com)) implementation for `nomenklatura` statement-based store for `ftm` entities.
