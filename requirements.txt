@@ -159,6 +159,9 @@ black==23.11.0 ; python_version >= "3.11" and python_version < "3.12" \
 botocore==1.31.64 ; python_version >= "3.11" and python_version < "3.12" \
     --hash=sha256:7b709310343a5b430ec9025b2e17c0bac6b16c05f1ac1d9521dece3f10c71bac \
     --hash=sha256:d8eb4b724ac437343359b318d73de0cfae0fecb24095827e56135b0ad6b44caf
+bump2version==1.0.1 ; python_version >= "3.11" and python_version < "3.12" \
+    --hash=sha256:37f927ea17cde7ae2d7baf832f8e80ce3777624554a653006c9144f8017fe410 \
+    --hash=sha256:762cb2bfad61f4ec8e2bdf452c7c267416f8c70dd9ecb1653fd0bbb01fa936e6
 cachetools==5.3.2 ; python_version >= "3.11" and python_version < "3.12" \
     --hash=sha256:086ee420196f7b2ab9ca2db2520aca326318b68fe5ba8bc4d49cca91add450f2 \
     --hash=sha256:861f35a13a451f94e301ce2bec7cac63e881232ccce7ed67fab9b5df4d3beaa1
