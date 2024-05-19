@@ -16,6 +16,6 @@ warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
 # FIXME sqlalchemy monkey patch not working
 nomenklatura.settings.DB_URL = "sqlite:///:memory:"
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 __all__ = ["get_engine", "get_store"]
