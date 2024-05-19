@@ -1,6 +1,6 @@
 import os
 
-VERSION = "0.2.1"
+VERSION = "0.3.0"
 
 
 def get_env(name, default=None):
