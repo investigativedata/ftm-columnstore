@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ftm-columnstore"
-version = "0.3.0"
+version = "0.3.1"
 description = "Column store implementation for ftm data based on clickhouse"
 authors = ["Simon Wörpel <simon@investigativedata.org>"]
 license = "GPL3"
@@ -34,7 +34,7 @@ libindic-utils = "^1.0.3"
 metaphone = "^0.6"
 pandas = "^2.2.2"
 rich = "^13.7.1"
-ftmq = "^0.6.4"
+ftmq = "^0.6.5"
 
 
 [tool.poetry.group.dev.dependencies]

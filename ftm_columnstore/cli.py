@@ -2,7 +2,7 @@ import logging
 from typing import Annotated, Optional
 
 import typer
-from ftmq.io import smart_read_proxies
+from ftmq.io import smart_read_proxies, smart_write_proxies
 from rich import print
 
 from ftm_columnstore import get_engine, get_store, settings
@@ -32,6 +32,22 @@ def cli_init(
 ):
     engine = get_engine()
     engine.ensure(recreate=recreate, exists_ok=True)
+
+
+@cli.command("iterate", help="Read entities from the store.")
+def cli_iterate(
+    dataset: Annotated[
+        Optional[str], typer.Option("-d", help="Dataset to read from")
+    ] = None,
+    out_uri: Annotated[
+        str, typer.Option("-o", help="Entities uri (as interpreted by `ftmq`)")
+    ] = "-",
+):
+    """
+    Read entities from the store and write json to `-o` (default: stdout)
+    """
+    store = get_store(dataset=dataset)
+    smart_write_proxies(out_uri, store.iterate(dataset), serialize=True)
 
 
 @cli.command("write", help="Write entity fragments to the store.")
