@@ -1,6 +1,6 @@
 FROM ghcr.io/investigativedata/ftm-docker:main
 
-RUN apt-get update && apt-get -y upgrade && && apt-get -y autoremove && apt-get clean
+RUN apt-get update && apt-get -y upgrade && apt-get -y autoremove && apt-get clean
 
 COPY ftm_columnstore /app/ftm_columnstore
 COPY setup.py /app/setup.py
