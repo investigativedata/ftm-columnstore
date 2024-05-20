@@ -1261,13 +1261,13 @@ tqdm = ["tqdm"]
 
 [[package]]
 name = "ftmq"
-version = "0.6.4"
+version = "0.6.5"
 description = "followthemoney query dsl and io helpers"
 optional = false
 python-versions = "<3.12,>=3.11"
 files = [
-    {file = "ftmq-0.6.4-py3-none-any.whl", hash = "sha256:0ca4bcfe72bbcdbf624dc079f7beae3407c209c5588a9749a4e14dcd96584aee"},
-    {file = "ftmq-0.6.4.tar.gz", hash = "sha256:12a97f5abf630590acc121d67a9da7e2077a21d675740cce38060517d9602896"},
+    {file = "ftmq-0.6.5-py3-none-any.whl", hash = "sha256:80b5e1faee042418a8c6d61336aff2f667ce59d69e05ed2826f2565bbe022fbb"},
+    {file = "ftmq-0.6.5.tar.gz", hash = "sha256:37bc1a32ebf5d12c13d27a30d24a1e4e6eaa55f7d6bcf66709cfeb07fdf0999e"},
 ]
 
 [package.dependencies]
@@ -1279,7 +1279,7 @@ click = ">=8.1.7,<9.0.0"
 click-default-group = ">=1.2.4,<2.0.0"
 cryptography = ">=42.0.7,<43.0.0"
 followthemoney = ">=3.6.0,<4.0.0"
-nomenklatura = ">=3.10.6,<4.0.0"
+nomenklatura = ">3.10,<3.11"
 orjson = ">=3.10.3,<4.0.0"
 pantomime = ">=0.6.1,<0.7.0"
 pycountry = ">=23.12.11,<24.0.0"
@@ -3111,13 +3111,13 @@ diagrams = ["jinja2", "railroad-diagrams"]
 
 [[package]]
 name = "pytest"
-version = "8.2.0"
+version = "8.2.1"
 description = "pytest: simple powerful testing with Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "pytest-8.2.0-py3-none-any.whl", hash = "sha256:1733f0620f6cda4095bbf0d9ff8022486e91892245bb9e7d5542c018f612f233"},
-    {file = "pytest-8.2.0.tar.gz", hash = "sha256:d507d4482197eac0ba2bae2e9babf0672eb333017bcedaa5fb1a3d42c1174b3f"},
+    {file = "pytest-8.2.1-py3-none-any.whl", hash = "sha256:faccc5d332b8c3719f40283d0d44aa5cf101cec36f88cde9ed8f2bc0538612b1"},
+    {file = "pytest-8.2.1.tar.gz", hash = "sha256:5046e5b46d8e4cac199c373041f26be56fdb81eb4e67dc11d4e10811fc3408fd"},
 ]
 
 [package.dependencies]
@@ -3332,13 +3332,13 @@ ocsp = ["cryptography (>=36.0.1)", "pyopenssl (==20.0.1)", "requests (>=2.26.0)"
 
 [[package]]
 name = "requests"
-version = "2.31.0"
+version = "2.32.0"
 description = "Python HTTP for Humans."
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.8"
 files = [
-    {file = "requests-2.31.0-py3-none-any.whl", hash = "sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f"},
-    {file = "requests-2.31.0.tar.gz", hash = "sha256:942c5a758f98d790eaed1a29cb6eefc7ffb0d1cf7af05c3d2791656dbd6ad1e1"},
+    {file = "requests-2.32.0-py3-none-any.whl", hash = "sha256:f2c3881dddb70d056c5bd7600a4fae312b2a300e39be6a118d30b90bd27262b5"},
+    {file = "requests-2.32.0.tar.gz", hash = "sha256:fa5490319474c82ef1d2c9bc459d3652e3ae4ef4c4ebdd18a21145a47ca4b6b8"},
 ]
 
 [package.dependencies]
@@ -3751,13 +3751,13 @@ files = [
 
 [[package]]
 name = "textual"
-version = "0.61.0"
+version = "0.61.1"
 description = "Modern Text User Interface framework"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "textual-0.61.0-py3-none-any.whl", hash = "sha256:176ac3aa5427fc076492d16afd20ea5c508605c2826cd176c8f5ac2589a1ee46"},
-    {file = "textual-0.61.0.tar.gz", hash = "sha256:91c83a659da40b227eced4fa749026a236b493cc5911a9bedd990ad5f0786be2"},
+    {file = "textual-0.61.1-py3-none-any.whl", hash = "sha256:58ef207424eb1015b85ca68abebf1a3c7b5cec108eec0d6a110f2aac9bc4d74f"},
+    {file = "textual-0.61.1.tar.gz", hash = "sha256:8f1092f0db58f5214c0de1f8174ecf9db08356e30d0acca69a8df9a183a29f6c"},
 ]
 
 [package.dependencies]
@@ -4108,4 +4108,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.12"
-content-hash = "3ff05b0143e88662b0e6597213335179d3d3354046f64dc3c86d4cc28ebd1b45"
+content-hash = "e42be001189effab5a683dd3fa18465353e9db179eb0cdfe9de217aec13a5e53"
