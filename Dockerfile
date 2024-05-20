@@ -1,6 +1,6 @@
 FROM ghcr.io/investigativedata/ftm-docker:main
 
-RUN apt-get update && apt-get -y upgrade
+RUN apt-get update && apt-get -y upgrade && && apt-get -y autoremove && apt-get clean
 
 COPY ftm_columnstore /app/ftm_columnstore
 COPY setup.py /app/setup.py
@@ -9,7 +9,7 @@ COPY pyproject.toml /app/pyproject.toml
 COPY VERSION /app/VERSION
 
 WORKDIR /app
-RUN pip install -U pip setuptools
-RUN pip install .
+RUN pip install --no-cache-dir -U pip setuptools
+RUN pip install --no-cache-dir .
 
 ENTRYPOINT ["ftmcs"]
