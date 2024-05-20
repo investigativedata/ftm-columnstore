@@ -150,8 +150,8 @@ class ClickhouseEngine:
             INDEX tix (prop_type) TYPE set(0) GRANULARITY 1,
             INDEX pix (prop) TYPE set(0) GRANULARITY 1
         ) ENGINE = ReplacingMergeTree(last_seen)
-        PRIMARY KEY (canonical_id, entity_id, id)
-        ORDER BY (canonical_id, entity_id, id)
+        PRIMARY KEY (canonical_id, entity_id, prop, value, id)
+        ORDER BY (canonical_id, entity_id, prop, value, id)
         """
 
         create_table_fpx = f"""
@@ -234,6 +234,14 @@ class ClickhouseEngine:
         """
 
         projections = (
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_dataset (
+                SELECT * ORDER BY dataset,canonical_id,prop)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_schema (
+                SELECT * ORDER BY schema,canonical_id,prop)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_dataset_schema (
+                SELECT * ORDER BY dataset,schema,canonical_id,prop)""",
+            f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_schema (
+                SELECT * ORDER BY schema,canonical_id,prop)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_values (
                 SELECT * ORDER BY value,prop)""",
             f"""ALTER TABLE {self.table} ADD PROJECTION {self.table}_canonical_lookup (
