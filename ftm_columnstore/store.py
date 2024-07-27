@@ -73,12 +73,12 @@ class ClickhouseWriter(nk.sql.SQLWriter[DS, CE]):
 
 @cache
 def get_store(
-    uri: str | None = None,
     catalog: C | None = None,
     dataset: Dataset | str | None = None,
-    resolver: Resolver | str | None = None,
+    uri: str | None = None,
+    linker: Resolver | str | None = None,
 ) -> ClickhouseStore:
     get_metadata.cache_clear()
     if isinstance(dataset, str):
         dataset = Dataset(name=dataset)
-    return ClickhouseStore(catalog, dataset, uri=uri, linker=resolver)
+    return ClickhouseStore(catalog, dataset, uri=uri, linker=linker)

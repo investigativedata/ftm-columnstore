@@ -3,12 +3,11 @@ import os
 VERSION = "0.3.1"
 
 
-def get_env(name, default=None):
+def get_env(name, default):
     value = os.environ.get(name)
     if value is not None:
         return str(value)
-    if default is not None:
-        return str(default)
+    return str(default)
 
 
 DATABASE_URI = get_env("DATABASE_URI", "clickhouse://localhost/default")
