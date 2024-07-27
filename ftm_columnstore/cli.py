@@ -2,10 +2,9 @@ import logging
 from typing import Annotated, Optional
 
 import typer
-from ftmq.io import smart_read_proxies, smart_write_proxies
 from rich import print
 
-from ftm_columnstore import get_engine, get_store, settings
+from ftm_columnstore import get_engine, settings
 
 log = logging.getLogger(__name__)
 
@@ -32,52 +31,6 @@ def cli_init(
 ):
     engine = get_engine()
     engine.ensure(recreate=recreate, exists_ok=True)
-
-
-@cli.command("iterate", help="Read entities from the store.")
-def cli_iterate(
-    dataset: Annotated[
-        Optional[str], typer.Option("-d", help="Dataset to read from")
-    ] = None,
-    out_uri: Annotated[
-        str, typer.Option("-o", help="Entities uri (as interpreted by `ftmq`)")
-    ] = "-",
-):
-    """
-    Read entities from the store and write json to `-o` (default: stdout)
-    """
-    store = get_store(dataset=dataset)
-    smart_write_proxies(out_uri, store.iterate(dataset), serialize=True)
-
-
-@cli.command("write", help="Write entity fragments to the store.")
-def cli_write(
-    in_uri: Annotated[
-        str, typer.Option("-i", help="Entities uri (as read by `ftmq`)")
-    ] = "-",
-    dataset: Annotated[
-        Optional[str], typer.Option("-d", help="Dataset to write to")
-    ] = None,
-    optimize: Annotated[
-        Optional[bool],
-        typer.Option(
-            ..., help="Optimize after import (don't do that when writing parallel)"
-        ),
-    ] = False,
-):
-    """
-    Write json entities from `infile` to store.
-    """
-    store = get_store(dataset=dataset)
-    with store.writer() as bulk:
-        for ix, proxy in enumerate(smart_read_proxies(in_uri)):
-            bulk.add_entity(proxy)
-            if ix and ix % 10_000 == 0:
-                print("Write entity `%d` ..." % ix)
-
-    if optimize:
-        engine = get_engine()
-        engine.optimize()
 
 
 @cli.command("optimize")

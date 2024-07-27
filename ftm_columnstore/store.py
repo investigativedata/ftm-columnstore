@@ -22,10 +22,10 @@ class BaseClickhouseStore(nk.SQLStore):
     def __init__(
         self,
         dataset: DS,
-        resolver: Resolver[CE],
+        linker: Resolver[CE],
         uri: str | None = None,
     ):
-        super().__init__(dataset, resolver)
+        super().__init__(dataset, linker)
         self.metadata = MetaData()
         self.table = make_statement_table(self.metadata)
         self.engine = get_engine(uri)
@@ -73,12 +73,12 @@ class ClickhouseWriter(nk.sql.SQLWriter[DS, CE]):
 
 @cache
 def get_store(
-    uri: str | None = None,
     catalog: C | None = None,
     dataset: Dataset | str | None = None,
-    resolver: Resolver | str | None = None,
+    uri: str | None = None,
+    linker: Resolver | str | None = None,
 ) -> ClickhouseStore:
     get_metadata.cache_clear()
     if isinstance(dataset, str):
         dataset = Dataset(name=dataset)
-    return ClickhouseStore(catalog, dataset, uri=uri, resolver=resolver)
+    return ClickhouseStore(catalog, dataset, uri=uri, linker=linker)
