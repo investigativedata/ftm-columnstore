@@ -1,4 +1,4 @@
-FROM ghcr.io/investigativedata/ftm-docker:main
+FROM ghcr.io/investigativedata/ftmq:main
 
 RUN apt-get update && apt-get -y upgrade && apt-get -y autoremove && apt-get clean
 
@@ -11,5 +11,3 @@ COPY VERSION /app/VERSION
 WORKDIR /app
 RUN pip install --no-cache-dir -U pip setuptools
 RUN pip install --no-cache-dir .
-
-ENTRYPOINT ["ftmcs"]
