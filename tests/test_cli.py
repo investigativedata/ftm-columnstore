@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 from click.testing import CliRunner as CCliRunner
@@ -28,6 +29,11 @@ def test_cli(fixtures_path: Path):
     res = q_runner.invoke(ftmq, ["-i", in_uri, "-o", DATABASE_URI])
     assert res.exit_code == 0
 
+    # sync after write
+    res = runner.invoke(cli, ["optimize", "--full"])
+    assert res.exit_code == 0
+    time.sleep(5)
+
     res = q_runner.invoke(ftmq, ["-i", DATABASE_URI])
     assert res.exit_code == 0
     lines = _get_lines(res.stdout)
@@ -36,7 +42,3 @@ def test_cli(fixtures_path: Path):
     assert res.exit_code == 0
     lines = _get_lines(res.stdout)
     assert len(lines) == 474
-
-    # management
-    res = runner.invoke(cli, ["optimize", "--full"])
-    assert res.exit_code == 0
